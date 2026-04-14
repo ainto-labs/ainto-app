@@ -22,66 +22,26 @@
 
 | Feature | Description |
 |---------|-------------|
+| **AI** | Press Tab to chat, or select text → run & replace (Fix Grammar, Translate, Summarize, or your own) |
 | **App Search** | Fuzzy search and launch macOS apps instantly |
-| **AI Chat** | Press Tab to chat with AI directly in the launcher |
-| **AI Commands** | Select text → run Fix Grammar, Translate, Summarize, and more |
 | **Clipboard History** | Persistent history with text, image, and file support |
-| **Snippets** | Text expansion with dynamic placeholders (`{date}`, `{clipboard}`) |
-| **Global Expansion** | Type a keyword in any app to auto-expand snippets |
-| **Frecency Ranking** | Results improve over time based on your usage patterns |
-| **Auto-Update** | Sparkle-based updates via GitHub Releases |
-
-## Architecture
-
-```
-Swift (macOS App)                    Rust (Static Library)
-├── AppKit lifecycle (NSApplication) ├── App Discovery (LSCopyAllApplicationURLs)
-├── NSPanel (non-activating)         ├── Fuzzy Search Engine
-├── CGEvent tap (hotkey + snippets)  ├── Clipboard Store (SQLite + xxhash)
-├── NSPasteboard monitoring          ├── Snippet Manager (TOML)
-├── NSStatusItem (tray)              ├── AI subprocess
-├── Sparkle (auto-update)            ├── AI Commands (TOML)
-├── SMAppService (launch at login)   ├── Frecency Ranking
-│                                    └── Config Manager (TOML)
-└──────── C ABI / FFI ──────────────┘
-```
+| **Snippets** | Text expansion in any app with dynamic placeholders (`{date}`, `{clipboard}`) |
 
 ## Build
 
 ```bash
-# Prerequisites: Rust toolchain + Xcode 15+
+# Quick dev build
+./build.sh
 
-# Quick dev build (SPM)
-make build
-
-# Build and run
-make run
-
-# Build .app bundle (for testing Sparkle, app icon, launch at login)
-make app
-
-# Generate Xcode project (after editing project.yml)
-make generate
+# Full build, run, and more
+make help
 ```
-
-## Config
-
-All configuration lives in `~/.config/ainto/`:
-
-| File | Purpose |
-|------|---------|
-| `config.toml` | General settings |
-| `snippets.toml` | Snippet definitions |
-| `ai-commands.toml` | Custom AI commands |
-| `clipboard.db` | Clipboard history (SQLite) |
-| `ranking.toml` | Frecency usage data |
 
 ## Requirements
 
 - macOS 14.0+
-- Xcode 15+
+- Xcode 16+
 - Rust toolchain (`rustup`)
-- xcodegen (`brew install xcodegen`) — for `.app` builds only
 
 ## License
 
