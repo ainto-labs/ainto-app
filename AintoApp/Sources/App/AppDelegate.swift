@@ -66,7 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         textExpander?.start()
 
         // Set up tray icon
-        trayManager = TrayManager(onSettings: { [weak self] in
+        trayManager = TrayManager(hotkeyManager: hotkeyManager, onSettings: { [weak self] in
             self?.openSettings()
         })
     }
