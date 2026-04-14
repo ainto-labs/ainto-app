@@ -163,7 +163,10 @@ jobs:
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3
         with:
           files: ${{ env.APP_NAME }}.dmg
+          generate_release_notes: true
+          append_body: true
           body: |
+            ---
             **Installation:** Download `Ainto.dmg`, open it, and drag Ainto to your Applications folder.
           draft: false
           prerelease: false
