@@ -291,7 +291,7 @@ struct ClipboardPreview: View {
         imageSize = nil
 
         // Load image/icon and metadata off main thread
-        nonisolated(unsafe) let capturedItem = item
+        let capturedItem = item
         let result = await Task.detached { () -> PreviewMetadata in
             var meta = PreviewMetadata()
             meta.image = capturedItem.displayImage
