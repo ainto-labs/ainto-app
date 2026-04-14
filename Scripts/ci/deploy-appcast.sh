@@ -30,6 +30,7 @@ cat > /tmp/new_item.xml << EOF
       <sparkle:version>${BUILD_NUMBER}</sparkle:version>
       <sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>${MACOS_MIN_VERSION}</sparkle:minimumSystemVersion>
+      <description><![CDATA[<a href="${REPO_URL}/releases/tag/v${VERSION}">View release notes</a>]]></description>
       <enclosure
         url="${REPO_URL}/releases/download/v${VERSION}/Ainto.dmg"
         length="${DMG_SIZE}"
