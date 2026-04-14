@@ -1,0 +1,40 @@
+[package]
+name = "ainto-core"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+# SQLite for clipboard persistence
+rusqlite = { version = "0.35", features = ["bundled"] }
+
+# Fast hashing for clipboard dedup
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+
+# Image encoding (RGBA → PNG)
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+serde_json = "1"
+
+# Safe home directory
+dirs = "6"
+
+# Error handling
+thiserror = "2"
+
+# UUID for snippet IDs
+uuid = { version = "1", features = ["v4"] }
+
+# macOS frameworks (for app discovery)
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
+block2 = "0.6"
+core-foundation = "0.10"
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSArray", "NSDictionary", "NSBundle", "NSData", "NSValue"] }
+objc2-app-kit = { version = "0.3", features = ["NSWorkspace", "NSImage", "NSRunningApplication", "NSBitmapImageRep", "NSImageRep"] }
