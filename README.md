@@ -40,7 +40,7 @@ make help
 ## Requirements
 
 - macOS 14.0+
-- Xcode 16+
+- Xcode 15+
 - Rust toolchain (`rustup`)
 
 ## License
