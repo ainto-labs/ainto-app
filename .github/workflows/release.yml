@@ -16,7 +16,6 @@ env:
 jobs:
   release:
     runs-on: macos-15
-    environment: production
     permissions:
       contents: write
 
