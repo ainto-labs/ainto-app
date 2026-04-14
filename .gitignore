@@ -1,0 +1,32 @@
+# Rust
+**/target/
+**/*.rs.bk
+
+# Swift
+**/.build/
+
+# Xcode
+build/
+DerivedData/
+*.xcodeproj/
+*.xcuserdata
+*.xcworkspace/xcuserdata/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.moved-aside
+
+# Release artifacts
+create-dmg/
+*.dmg
+*.zip
+
+# macOS
+.DS_Store
+*.swp
+*.swo
+
+# IDE
+.idea/
+.vscode/
