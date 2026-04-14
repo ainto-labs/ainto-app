@@ -1,0 +1,5 @@
+module AintoCore {
+    header "ainto_core.h"
+    link "ainto_core"
+    export *
+}

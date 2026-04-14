@@ -1,0 +1,12 @@
+// Ainto base build configuration
+// docs: https://help.apple.com/xcode/mac/11.4/#/itcaec37c2a6
+
+PRODUCT_NAME = Ainto
+PRODUCT_BUNDLE_IDENTIFIER = app.ainto.macos
+MARKETING_VERSION = 0.1.0
+CURRENT_PROJECT_VERSION = 100
+MACOSX_DEPLOYMENT_TARGET = 14.0
+SWIFT_VERSION = 6.0
+INFOPLIST_FILE = Resources/Info.plist
+CODE_SIGN_ENTITLEMENTS = Resources/Ainto.entitlements
+ENABLE_HARDENED_RUNTIME = YES

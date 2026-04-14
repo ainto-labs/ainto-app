@@ -1,0 +1,9 @@
+// Ainto Debug build configuration
+
+#include "base.xcconfig"
+
+CODE_SIGN_IDENTITY = Local Self-Signed
+CODE_SIGN_STYLE = Manual
+DEVELOPMENT_TEAM =
+CODE_SIGN_ENTITLEMENTS = Resources/Ainto-Debug.entitlements
+OTHER_CODE_SIGN_FLAGS = --timestamp=none

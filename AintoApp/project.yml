@@ -1,0 +1,77 @@
+name: AintoApp
+options:
+  bundleIdPrefix: app.ainto
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "15.0"
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    PRODUCT_NAME: Ainto
+    PRODUCT_BUNDLE_IDENTIFIER: app.ainto.macos
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "100"
+    SWIFT_VERSION: "6.0"
+    ENABLE_HARDENED_RUNTIME: YES
+    INFOPLIST_FILE: Resources/Info.plist
+    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+  configs:
+    Debug:
+      CODE_SIGN_IDENTITY: "Local Self-Signed"
+      CODE_SIGN_STYLE: Manual
+      CODE_SIGN_ENTITLEMENTS: Resources/Ainto-Debug.entitlements
+      OTHER_CODE_SIGN_FLAGS: --timestamp=none
+    Release:
+      CODE_SIGN_IDENTITY: "Local Self-Signed"
+      CODE_SIGN_STYLE: Manual
+      CODE_SIGN_ENTITLEMENTS: Resources/Ainto.entitlements
+      SWIFT_COMPILATION_MODE: wholemodule
+      SWIFT_OPTIMIZATION_LEVEL: -O
+
+packages:
+  HotKey:
+    url: https://github.com/soffes/HotKey
+    from: "0.2.1"
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.0.0"
+
+targets:
+  AintoApp:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources
+        type: group
+      - path: AintoCoreBridge
+        type: group
+        buildPhase: none
+      - path: Resources
+        type: group
+        buildPhase: resources
+        excludes:
+          - "*.entitlements"
+          - "Info.plist"
+    dependencies:
+      - package: HotKey
+      - package: Sparkle
+        product: Sparkle
+      - sdk: CoreFoundation.framework
+      - sdk: CoreServices.framework
+      - sdk: AppKit.framework
+      - sdk: Security.framework
+      - sdk: SystemConfiguration.framework
+      - sdk: ServiceManagement.framework
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Resources/Info.plist
+        OTHER_LDFLAGS:
+          - -lainto_core
+        LIBRARY_SEARCH_PATHS:
+          - $(PROJECT_DIR)/../ainto-core/target/release
+        SWIFT_INCLUDE_PATHS:
+          - $(PROJECT_DIR)/AintoCoreBridge
+        LD_RUNPATH_SEARCH_PATHS:
+          - "@executable_path/../Frameworks"
