@@ -40,6 +40,8 @@ jobs:
 
       - name: Build Rust core
         run: cd ainto-core && cargo build --release
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '14.0'
 
       - name: Install certificate
         env:
