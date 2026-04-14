@@ -1,0 +1,187 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions: {}
+
+env:
+  APP_NAME: Ainto
+  SCHEME: AintoApp
+  BUILD_PATH: AintoApp/build/Build/Products/Release
+  MACOS_MIN_VERSION: "14.0"
+
+jobs:
+  release:
+    runs-on: macos-15
+    environment: production
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version from tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          ./Scripts/ci/validate-release-version.sh "$VERSION"
+          BUILD_NUMBER=$(./Scripts/ci/version-to-build-number.sh "$VERSION")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "build_number=$BUILD_NUMBER" >> $GITHUB_OUTPUT
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - name: Build Rust core
+        run: cd ainto-core && cargo build --release
+
+      - name: Install certificate
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          echo "$APPLE_CERTIFICATE_P12" | base64 --decode > $RUNNER_TEMP/certificate.p12
+          security import $RUNNER_TEMP/certificate.p12 \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          cd AintoApp && xcodegen generate
+
+      - name: Build
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          cd AintoApp && xcodebuild \
+            -scheme $SCHEME \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="Developer ID Application" \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
+            OTHER_CODE_SIGN_FLAGS="--timestamp --options runtime" \
+            build
+
+      - name: Re-sign Sparkle framework
+        run: |
+          APP_PATH="$BUILD_PATH/$APP_NAME.app"
+          SPARKLE_PATH="$APP_PATH/Contents/Frameworks/Sparkle.framework"
+          codesign --force --options runtime --timestamp \
+            --sign "Developer ID Application" \
+            "$SPARKLE_PATH/Versions/B/XPCServices/Downloader.xpc"
+          codesign --force --options runtime --timestamp \
+            --sign "Developer ID Application" \
+            "$SPARKLE_PATH/Versions/B/XPCServices/Installer.xpc"
+          codesign --force --options runtime --timestamp \
+            --sign "Developer ID Application" \
+            "$SPARKLE_PATH/Versions/B/Autoupdate"
+          codesign --force --options runtime --timestamp \
+            --sign "Developer ID Application" \
+            "$SPARKLE_PATH/Versions/B/Updater.app"
+          codesign --force --options runtime --timestamp \
+            --sign "Developer ID Application" \
+            "$SPARKLE_PATH"
+          codesign --force --options runtime --timestamp \
+            --sign "Developer ID Application" \
+            --entitlements AintoApp/Resources/Ainto.entitlements \
+            "$APP_PATH"
+
+      - name: Notarize
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          cd "$BUILD_PATH"
+          ditto -c -k --keepParent "$APP_NAME.app" "$APP_NAME.zip"
+          xcrun notarytool submit "$APP_NAME.zip" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+          xcrun stapler staple "$APP_NAME.app"
+
+      - name: Create DMG
+        run: |
+          git clone --depth 1 --branch v1.2.3 https://github.com/create-dmg/create-dmg.git
+          ./create-dmg/create-dmg \
+            --volname "$APP_NAME" \
+            --window-pos 200 120 \
+            --window-size 500 320 \
+            --icon-size 80 \
+            --icon "$APP_NAME.app" 125 175 \
+            --hide-extension "$APP_NAME.app" \
+            --app-drop-link 375 175 \
+            --no-internet-enable \
+            "$APP_NAME.dmg" \
+            "$BUILD_PATH/$APP_NAME.app"
+
+      - name: Sign DMG for Sparkle
+        id: sparkle_sign
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          # Download Sparkle tools (pinned version + checksum)
+          SPARKLE_VERSION="2.6.4"
+          SPARKLE_SHA256="50612a06038abc931f16011d7903b8326a362c1074dabccb718404ce8e585f0b"
+          curl -sL -o /tmp/Sparkle.tar.xz "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz"
+          echo "${SPARKLE_SHA256}  /tmp/Sparkle.tar.xz" | shasum -a 256 --check
+          mkdir -p /tmp/sparkle
+          tar -xf /tmp/Sparkle.tar.xz -C /tmp/sparkle
+
+          # Write key to secure temp file
+          SPARKLE_KEY_FILE=$(mktemp)
+          chmod 600 "$SPARKLE_KEY_FILE"
+          trap 'rm -f "$SPARKLE_KEY_FILE"' EXIT
+          echo "$SPARKLE_PRIVATE_KEY" > "$SPARKLE_KEY_FILE"
+
+          SIGN_OUTPUT=$(/tmp/sparkle/bin/sign_update "$APP_NAME.dmg" --ed-key-file "$SPARKLE_KEY_FILE")
+          rm -f "$SPARKLE_KEY_FILE"
+          SIGNATURE=$(echo "$SIGN_OUTPUT" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')
+          echo "signature=$SIGNATURE" >> $GITHUB_OUTPUT
+          DMG_SIZE=$(stat -f%z "$APP_NAME.dmg")
+          echo "dmg_size=$DMG_SIZE" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          files: ${{ env.APP_NAME }}.dmg
+          body: |
+            **Installation:** Download `Ainto.dmg`, open it, and drag Ainto to your Applications folder.
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Deploy appcast.xml to GitHub Pages
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
+          SIGNATURE: ${{ steps.sparkle_sign.outputs.signature }}
+          DMG_SIZE: ${{ steps.sparkle_sign.outputs.dmg_size }}
+          MACOS_MIN_VERSION: ${{ env.MACOS_MIN_VERSION }}
+          REPO_URL: https://github.com/${{ github.repository }}
+          APPCAST_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/appcast.xml
+        run: ./Scripts/ci/deploy-appcast.sh
+
+      - name: Cleanup
+        if: always()
+        run: |
+          security delete-keychain $RUNNER_TEMP/app-signing.keychain-db || true
+          rm -f $RUNNER_TEMP/certificate.p12
