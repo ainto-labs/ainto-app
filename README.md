@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="ainto-org-avatar.png" width="128" alt="Ainto Logo">
+  <img src="https://ainto.app/logo-256.png" width="128" alt="Ainto Logo">
 </p>
 
 <h1 align="center">Ainto</h1>
