@@ -101,6 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             defer: false
         )
         window.contentView = hostingView
+        window.isReleasedWhenClosed = false
         window.title = "Settings"
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
