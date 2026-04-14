@@ -47,6 +47,7 @@ echo "=== Switching to gh-pages ==="
 git config user.name "github-actions[bot]"
 git config user.email "github-actions[bot]@users.noreply.github.com"
 
+git stash --include-untracked
 git fetch origin gh-pages:gh-pages 2>/dev/null || true
 git checkout gh-pages || git checkout --orphan gh-pages
 
