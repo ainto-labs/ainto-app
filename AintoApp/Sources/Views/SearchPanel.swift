@@ -19,16 +19,16 @@ final class SearchPanel: NSPanel {
     init() {
         let mainView = MainView(viewModel: viewModel)
         hostingView = NSHostingView(rootView: mainView)
-        // Only push SwiftUI's preferred size to the window. The default
-        // `.standardBounds` pushes min+max+preferred, which flip-flops against
-        // `.frame(width:).fixedSize(vertical:)` and recurses through
-        // `updateWindowContentSizeExtremaIfNecessary` → `updateConstraints`
-        // until the stack overflows (SIGABRT on macOS 14/15).
-        hostingView.sizingOptions = [.preferredContentSize]
+        // Default sizingOptions (.standardBounds) for correct auto-sizing.
+        // Removing .titled eliminates the title bar constraints that caused
+        // the infinite recursion between updateWindowContentSizeExtremaIfNecessary
+        // and updateConstraints when display configuration changes (macOS 14/15).
+        // The panel's visual appearance is unchanged — SwiftUI provides its own
+        // glassmorphism background via VisualEffectBackground + RoundedRectangle.
 
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 680, height: 400),
-            styleMask: [.nonactivatingPanel, .titled, .fullSizeContentView],
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 400),
+            styleMask: [.nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
@@ -37,11 +37,6 @@ final class SearchPanel: NSPanel {
         self.level = .floating
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         self.isMovableByWindowBackground = true
-        self.titlebarAppearsTransparent = true
-        self.titleVisibility = .hidden
-        self.standardWindowButton(.closeButton)?.isHidden = true
-        self.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        self.standardWindowButton(.zoomButton)?.isHidden = true
         self.isOpaque = false
         self.backgroundColor = .clear
         self.hasShadow = true
