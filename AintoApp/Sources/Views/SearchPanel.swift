@@ -19,10 +19,16 @@ final class SearchPanel: NSPanel {
     init() {
         let mainView = MainView(viewModel: viewModel)
         hostingView = NSHostingView(rootView: mainView)
+        // Only push SwiftUI's preferred size to the window. The default
+        // `.standardBounds` pushes min+max+preferred, which flip-flops against
+        // `.frame(width:).fixedSize(vertical:)` and recurses through
+        // `updateWindowContentSizeExtremaIfNecessary` → `updateConstraints`
+        // until the stack overflows (SIGABRT on macOS 14/15).
+        hostingView.sizingOptions = [.preferredContentSize]
 
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 600, height: 400),
-            styleMask: [.nonactivatingPanel, .titled, .fullSizeContentView, .resizable],
+            contentRect: NSRect(x: 0, y: 0, width: 680, height: 400),
+            styleMask: [.nonactivatingPanel, .titled, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
