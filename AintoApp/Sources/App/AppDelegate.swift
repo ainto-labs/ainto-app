@@ -11,6 +11,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var textExpander: TextExpander?
     private var trayManager: TrayManager?
     private var settingsWindow: NSWindow?
+    private var configWatcherSources: [DispatchSourceFileSystemObject] = []
+    private var configWatcherFDs: [Int32] = []
 
     private var updaterController: SPUStandardUpdaterController?
 
@@ -69,11 +71,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         trayManager = TrayManager(hotkeyManager: hotkeyManager, onSettings: { [weak self] in
             self?.openSettings()
         })
+
+        // Watch ~/.config/ainto/ for external file changes (e.g. manual TOML edits)
+        watchConfigDirectory()
+    }
+
+    /// Monitor config files for external changes and reload automatically.
+    private func watchConfigDirectory() {
+        let configDir = NSHomeDirectory() + "/.config/ainto"
+        let files = ["snippets.toml", "ai-commands.toml"]
+
+        for file in files {
+            let path = configDir + "/" + file
+            let fd = open(path, O_EVTONLY)
+            guard fd >= 0 else { continue }
+            configWatcherFDs.append(fd)
+
+            let source = DispatchSource.makeFileSystemObjectSource(
+                fileDescriptor: fd,
+                eventMask: [.write, .rename, .delete],
+                queue: .main
+            )
+            source.setEventHandler { [weak self] in
+                self?.searchPanel?.viewModel.loadSnippets()
+                self?.searchPanel?.viewModel.loadAICommands()
+                self?.textExpander?.reloadSnippets()
+            }
+            source.setCancelHandler { close(fd) }
+            source.resume()
+            configWatcherSources.append(source)
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         clipboardMonitor?.stopMonitoring()
         textExpander?.stop()
+        configWatcherSources.forEach { $0.cancel() }
     }
 
     private func toggleSearchPanel() {
