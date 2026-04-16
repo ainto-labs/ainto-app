@@ -265,6 +265,8 @@ final class SearchPanel: NSPanel {
                 case 6: flags.contains(.shift) ? Selector(("redo:")) : Selector(("undo:")) // Z
                 case 0: #selector(NSText.selectAll(_:))  // A
                 case 7: #selector(NSText.cut(_:))        // X
+                case 8: #selector(NSText.copy(_:))       // C
+                case 9: #selector(NSText.paste(_:))      // V
                 default: nil
                 }
                 if let action {
