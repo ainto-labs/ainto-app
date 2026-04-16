@@ -219,7 +219,8 @@ final class TextExpander {
             if trie.contains(suffix), let expansion = snippetMap[suffix] {
                 // Resolve placeholders
                 var resolved = expansion
-                if let cStr = rc_snippet_expand(expansion, nil) {
+                let clipboardText = NSPasteboard.general.string(forType: .string)
+                if let cStr = rc_snippet_expand(expansion, clipboardText) {
                     resolved = String(cString: cStr)
                     rc_free_string(cStr)
                 }
