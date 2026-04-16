@@ -43,6 +43,7 @@ struct ClipboardView: View {
                     .onAppear { isFilterFocused = true }
                     .onChange(of: viewModel.debouncedClipboardFilter) { _, _ in
                         viewModel.clipboardSelectedIndex = 0
+                        schedulePreviewUpdate()
                     }
 
                 Spacer()
