@@ -396,6 +396,14 @@ final class SearchPanel: NSPanel {
                 return nil
             }
 
+            // Let the IME handle Enter/Escape/arrows while composing
+            // (marked text means the input method is mid-composition).
+            if let textView = self.firstResponder as? NSTextView,
+               textView.hasMarkedText(),
+               [36, 53, 125, 126].contains(keyCode) {
+                return event
+            }
+
             switch keyCode {
             case 53 where self.viewModel.isEditingSnippet: // Escape in snippet edit — cancel
                 self.viewModel.cancelEditingSnippet()
