@@ -41,6 +41,15 @@ final class SearchPanel: NSPanel {
         self.backgroundColor = .clear
         self.hasShadow = true
 
+        // Round the window content view to match the SwiftUI clipShape,
+        // so the window-level shadow follows the rounded corners.
+        if let cv = self.contentView {
+            cv.wantsLayer = true
+            cv.layer?.cornerRadius = 16
+            cv.layer?.cornerCurve = .continuous
+            cv.layer?.masksToBounds = true
+        }
+
         // Accept keyboard input even without activating the app
         self.becomesKeyOnlyIfNeeded = false
 
