@@ -132,7 +132,8 @@ fn is_nested_inside_another_app(app_path: &Path) -> bool {
     let comps: Vec<_> = app_path.components().collect();
     for component in comps.iter().take(comps.len().saturating_sub(1)) {
         if let std::path::Component::Normal(name) = component {
-            if name.to_string_lossy().ends_with(".app") {
+            let n = name.to_string_lossy();
+            if n.ends_with(".app") || n.ends_with(".bundle") || n.ends_with(".framework") {
                 return true;
             }
         }
@@ -147,6 +148,11 @@ fn is_helper_location(path: &Path) -> bool {
         || s.contains("/Contents/Helpers/")
         || s.contains("/Contents/Frameworks/")
         || s.contains("/Library/PrivilegedHelperTools/")
+        // Exclude system internals and support bundles — user-facing apps
+        // live in /Applications/, /System/Applications/, or ~/Applications/.
+        || s.starts_with("/System/Library/")
+        || s.starts_with("/Library/Apple/System/")
+        || s.starts_with("/Library/Application Support/")
 }
 
 /// Extract app metadata from a bundle path.
