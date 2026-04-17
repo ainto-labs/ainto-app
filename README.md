@@ -45,7 +45,7 @@ make help
 
 ## License
 
-MIT
+[GPL-3.0-or-later](LICENSE) — Ainto is free software: any fork or derivative must remain open-source under the same license.
 
 ---
 
