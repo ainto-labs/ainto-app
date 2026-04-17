@@ -3,8 +3,6 @@
 //! Uses the undocumented `LSCopyAllApplicationURLs` API to enumerate all registered
 //! applications. This private API has been stable since macOS 10.5 and is widely used
 //! by launcher applications (Alfred, Raycast, etc.).
-//!
-//! Adapted from the original Ainto project (MIT license).
 
 use core::{
     ffi::{CStr, c_void},
