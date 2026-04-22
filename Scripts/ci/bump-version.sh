@@ -7,8 +7,8 @@ set -euo pipefail
 #   ./Scripts/ci/bump-version.sh 0.1.2
 #
 # Files updated:
-#   1. AintoApp/project.yml        (MARKETING_VERSION)
-#   2. AintoApp/Config/base.xcconfig (MARKETING_VERSION)
+#   1. AintoApp/project.yml        (MARKETING_VERSION + CURRENT_PROJECT_VERSION)
+#   2. AintoApp/Config/base.xcconfig (MARKETING_VERSION + CURRENT_PROJECT_VERSION)
 #   3. AintoApp/Sources/App/Version.swift (appVersion)
 #   4. ainto-core/Cargo.toml       (version)
 
@@ -29,15 +29,21 @@ if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
     exit 1
 fi
 
-echo "=== Bumping version to $VERSION ==="
+BUILD_NUMBER=$("$SCRIPT_DIR/version-to-build-number.sh" "$VERSION")
+
+echo "=== Bumping version to $VERSION (build $BUILD_NUMBER) ==="
 
 # 1. project.yml
 sed -i '' "s/MARKETING_VERSION: \"[0-9]*\.[0-9]*\.[0-9]*\"/MARKETING_VERSION: \"$VERSION\"/" \
+    "$PROJECT_DIR/AintoApp/project.yml"
+sed -i '' "s/CURRENT_PROJECT_VERSION: \"[0-9]*\"/CURRENT_PROJECT_VERSION: \"$BUILD_NUMBER\"/" \
     "$PROJECT_DIR/AintoApp/project.yml"
 echo "  project.yml: OK"
 
 # 2. base.xcconfig
 sed -i '' "s/MARKETING_VERSION = [0-9]*\.[0-9]*\.[0-9]*/MARKETING_VERSION = $VERSION/" \
+    "$PROJECT_DIR/AintoApp/Config/base.xcconfig"
+sed -i '' "s/CURRENT_PROJECT_VERSION = [0-9]*/CURRENT_PROJECT_VERSION = $BUILD_NUMBER/" \
     "$PROJECT_DIR/AintoApp/Config/base.xcconfig"
 echo "  base.xcconfig: OK"
 
@@ -74,6 +80,19 @@ check "project.yml" "$(grep 'MARKETING_VERSION' "$PROJECT_DIR/AintoApp/project.y
 check "base.xcconfig" "$(grep 'MARKETING_VERSION' "$PROJECT_DIR/AintoApp/Config/base.xcconfig" | sed 's/.*= *//')"
 check "Version.swift" "$(grep 'appVersion' "$PROJECT_DIR/AintoApp/Sources/App/Version.swift" | sed 's/.*"\([^"]*\)".*/\1/')"
 check "Cargo.toml" "$(grep '^version' "$PROJECT_DIR/ainto-core/Cargo.toml" | head -1 | sed 's/.*"\([^"]*\)".*/\1/')"
+
+check_build() {
+    local file="$1" actual="$2"
+    if [ "$actual" != "$BUILD_NUMBER" ]; then
+        echo "  MISMATCH: $file build number is $actual (expected $BUILD_NUMBER)" >&2
+        FAIL=1
+    else
+        echo "  $file build: $actual"
+    fi
+}
+
+check_build "project.yml" "$(grep 'CURRENT_PROJECT_VERSION' "$PROJECT_DIR/AintoApp/project.yml" | head -1 | sed 's/.*"\([^"]*\)".*/\1/')"
+check_build "base.xcconfig" "$(grep 'CURRENT_PROJECT_VERSION' "$PROJECT_DIR/AintoApp/Config/base.xcconfig" | sed 's/.*= *//')"
 
 if [ "$FAIL" -ne 0 ]; then
     echo ""
