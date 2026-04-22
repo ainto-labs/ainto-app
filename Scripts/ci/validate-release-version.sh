@@ -9,7 +9,8 @@ set -euo pipefail
 # Checks:
 #   1. Version format is X.Y.Z
 #   2. project.yml MARKETING_VERSION matches
-#   3. CHANGELOG.md has entry for this version
+#   3. project.yml + base.xcconfig CURRENT_PROJECT_VERSION match computed build number
+#   4. CHANGELOG.md has entry for this version
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -39,7 +40,23 @@ if [ "$YAML_VERSION" != "$VERSION" ]; then
 fi
 echo "MARKETING_VERSION: OK ($YAML_VERSION)"
 
-# 3. Validate CHANGELOG.md has entry for this version
+# 3. Validate CURRENT_PROJECT_VERSION matches computed build number
+EXPECTED_BUILD=$("$SCRIPT_DIR/version-to-build-number.sh" "$VERSION")
+
+YAML_BUILD=$(grep "CURRENT_PROJECT_VERSION" "$PROJECT_DIR/AintoApp/project.yml" | head -1 | sed 's/.*"\([^"]*\)".*/\1/')
+if [ "$YAML_BUILD" != "$EXPECTED_BUILD" ]; then
+    echo "::error::project.yml CURRENT_PROJECT_VERSION ($YAML_BUILD) doesn't match expected build number ($EXPECTED_BUILD for $VERSION)" >&2
+    exit 1
+fi
+
+XCCONFIG_BUILD=$(grep "CURRENT_PROJECT_VERSION" "$PROJECT_DIR/AintoApp/Config/base.xcconfig" | sed 's/.*= *//')
+if [ "$XCCONFIG_BUILD" != "$EXPECTED_BUILD" ]; then
+    echo "::error::base.xcconfig CURRENT_PROJECT_VERSION ($XCCONFIG_BUILD) doesn't match expected build number ($EXPECTED_BUILD for $VERSION)" >&2
+    exit 1
+fi
+echo "CURRENT_PROJECT_VERSION: OK ($EXPECTED_BUILD)"
+
+# 4. Validate CHANGELOG.md has entry for this version
 if [ -f "$PROJECT_DIR/CHANGELOG.md" ]; then
     if ! grep -q "^## \[$VERSION\]" "$PROJECT_DIR/CHANGELOG.md"; then
         echo "::error::CHANGELOG.md missing entry for version $VERSION" >&2
