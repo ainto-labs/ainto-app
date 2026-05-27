@@ -61,9 +61,15 @@ final class TrayManager: NSObject {
     }
 
     private func loadMenuBarIcon() -> NSImage? {
-        // Register 1x/@2x/@3x reps on a single NSImage so macOS picks the
-        // right pixel density for the current display. Otherwise the 1x
-        // raster gets upscaled on Retina and looks blurry.
+        // Xcode collapses ainto-menubar.png + @2x + @3x into a single
+        // multi-rep ainto-menubar.tiff. SPM keeps them as separate PNGs.
+        // Either way we want a single NSImage with all reps so macOS
+        // picks the right pixel density for the current display.
+        if let url = ResourceBundle.url(forResource: "ainto-menubar", withExtension: "tiff"),
+           let image = NSImage(contentsOf: url) {
+            image.size = NSSize(width: 18, height: 18)
+            return image
+        }
         let image = NSImage(size: NSSize(width: 18, height: 18))
         var added = false
         for name in ["ainto-menubar", "ainto-menubar@2x", "ainto-menubar@3x"] {
