@@ -61,14 +61,21 @@ final class TrayManager: NSObject {
     }
 
     private func loadMenuBarIcon() -> NSImage? {
-        for ext in ["png", "tiff"] {
-            if let url = ResourceBundle.url(forResource: "ainto-menubar", withExtension: ext),
-               let image = NSImage(contentsOf: url) {
-                image.size = NSSize(width: 18, height: 18)
-                return image
+        // Register 1x/@2x/@3x reps on a single NSImage so macOS picks the
+        // right pixel density for the current display. Otherwise the 1x
+        // raster gets upscaled on Retina and looks blurry.
+        let image = NSImage(size: NSSize(width: 18, height: 18))
+        var added = false
+        for name in ["ainto-menubar", "ainto-menubar@2x", "ainto-menubar@3x"] {
+            guard let url = ResourceBundle.url(forResource: name, withExtension: "png"),
+                  let reps = NSImageRep.imageReps(withContentsOf: url) else { continue }
+            for rep in reps {
+                rep.size = NSSize(width: 18, height: 18)
+                image.addRepresentation(rep)
+                added = true
             }
         }
-        return nil
+        return added ? image : nil
     }
 }
 
