@@ -43,8 +43,13 @@ void rc_update_ranking(const char* app_path);
 // Clipboard Store
 // ============================================================
 
-/// Initialize clipboard store, returns 0 on success
-int32_t rc_clipboard_init(uint64_t max_items);
+/// Initialize clipboard store with separate text and image quotas, returns 0 on success.
+/// `max_text_items` covers text + file entries; `max_image_items` covers images.
+int32_t rc_clipboard_init(uint64_t max_text_items, uint64_t max_image_items);
+
+/// Update eviction limits on the running store and trim immediately, returns 0 on success.
+/// Lets Settings changes take effect without restarting the app.
+int32_t rc_clipboard_set_limits(uint64_t max_text_items, uint64_t max_image_items);
 
 /// Insert text clipboard entry, returns entry ID or -1 on error
 int64_t rc_clipboard_insert_text(const char* text, const char* source_app);

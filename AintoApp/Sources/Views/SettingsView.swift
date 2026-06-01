@@ -92,8 +92,8 @@ struct SettingsView: View {
             if let hk = hotkeyManager?.currentHotkey { selectedHotkey = hk }
             raycastRunning = NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == "com.raycast.macos" }
         }
-        .onChange(of: clipboardMaxItems) { _, _ in saveConfig() }
-        .onChange(of: clipboardMaxImageItems) { _, _ in saveConfig() }
+        .onChange(of: clipboardMaxItems) { _, _ in saveConfig(); applyClipboardLimits() }
+        .onChange(of: clipboardMaxImageItems) { _, _ in saveConfig(); applyClipboardLimits() }
         .onChange(of: debounceDelay) { _, _ in saveConfig() }
         .onChange(of: claudeBinary) { _, _ in saveConfig() }
         .onChange(of: claudeEnabled) { _, _ in saveConfig() }
@@ -534,6 +534,13 @@ struct SettingsView: View {
         guard let data = try? JSONSerialization.data(withJSONObject: config),
               let jsonStr = String(data: data, encoding: .utf8) else { return }
         let _ = rc_config_save(jsonStr)
+    }
+
+    /// Apply clipboard limits to the running store so the change takes effect
+    /// immediately, not just on next launch. Only invoked when the clipboard
+    /// limits change — not on every config save.
+    private func applyClipboardLimits() {
+        let _ = rc_clipboard_set_limits(UInt64(clipboardMaxItems), UInt64(clipboardMaxImageItems))
     }
 }
 

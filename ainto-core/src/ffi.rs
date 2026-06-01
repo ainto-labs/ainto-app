@@ -223,20 +223,39 @@ pub extern "C" fn rc_update_ranking(app_path: *const c_char) {
 // ============================================================
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rc_clipboard_init(max_items: u64) -> i32 {
+pub extern "C" fn rc_clipboard_init(max_text_items: u64, max_image_items: u64) -> i32 {
     let Ok(cfg_dir) = config::config_dir() else {
         return -1;
     };
     let db_path = cfg_dir.join("clipboard.db");
     let image_dir = cfg_dir.join("clipboard");
 
-    match clipboard_store::ClipboardStore::open(&db_path, &image_dir, max_items as usize) {
+    match clipboard_store::ClipboardStore::open(
+        &db_path,
+        &image_dir,
+        max_text_items as usize,
+        max_image_items as usize,
+    ) {
         Ok(store) => {
             if let Ok(mut guard) = CLIPBOARD_STORE.lock() {
                 *guard = Some(store);
             }
             0
         }
+        Err(_) => -1,
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rc_clipboard_set_limits(max_text_items: u64, max_image_items: u64) -> i32 {
+    let Ok(mut guard) = CLIPBOARD_STORE.lock() else {
+        return -1;
+    };
+    let Some(ref mut store) = *guard else {
+        return -1;
+    };
+    match store.set_limits(max_text_items as usize, max_image_items as usize) {
+        Ok(()) => 0,
         Err(_) => -1,
     }
 }

@@ -36,20 +36,31 @@ pub struct ClipboardEntry {
 }
 
 /// SQLite-backed clipboard history store.
+///
+/// Eviction is split: text + file entries share `max_text_items`; images have
+/// their own `max_image_items` quota. This prevents high-frequency text copies
+/// from pushing out the lower-volume image history.
 pub struct ClipboardStore {
     db: Connection,
-    max_items: usize,
+    max_text_items: usize,
+    max_image_items: usize,
     image_dir: PathBuf,
 }
 
 impl ClipboardStore {
     /// Open or create the clipboard database.
-    pub fn open(db_path: &Path, image_dir: &Path, max_items: usize) -> Result<Self, Error> {
+    pub fn open(
+        db_path: &Path,
+        image_dir: &Path,
+        max_text_items: usize,
+        max_image_items: usize,
+    ) -> Result<Self, Error> {
         std::fs::create_dir_all(image_dir)?;
         let db = Connection::open(db_path)?;
         let store = Self {
             db,
-            max_items,
+            max_text_items,
+            max_image_items,
             image_dir: image_dir.to_path_buf(),
         };
         store.create_tables()?;
@@ -257,21 +268,47 @@ impl ClipboardStore {
         Ok(())
     }
 
-    /// Evict oldest non-pinned items exceeding max_items.
-    fn evict(&mut self) -> Result<(), Error> {
-        let count: i64 = self
-            .db
-            .query_row("SELECT COUNT(*) FROM clipboard_items", [], |row| row.get(0))?;
+    /// Update eviction limits and immediately trim to the new caps.
+    /// Called when the user changes "Max text/image items" in Settings so the
+    /// change takes effect without restarting the app.
+    pub fn set_limits(
+        &mut self,
+        max_text_items: usize,
+        max_image_items: usize,
+    ) -> Result<(), Error> {
+        self.max_text_items = max_text_items;
+        self.max_image_items = max_image_items;
+        self.evict()
+    }
 
-        if count as usize <= self.max_items {
+    /// Evict oldest items exceeding per-pool limits.
+    /// Images are capped by `max_image_items`; text + file entries share `max_text_items`.
+    fn evict(&mut self) -> Result<(), Error> {
+        self.evict_pool("content_type = 'image'", self.max_image_items)?;
+        self.evict_pool("content_type IN ('text', 'file')", self.max_text_items)?;
+        Ok(())
+    }
+
+    /// Evict oldest entries within a pool defined by a hardcoded WHERE clause.
+    /// `where_clause` must be a literal — no user input is interpolated.
+    fn evict_pool(&mut self, where_clause: &str, limit: usize) -> Result<(), Error> {
+        let count_sql = format!(
+            "SELECT COUNT(*) FROM clipboard_items WHERE {}",
+            where_clause
+        );
+        let count: i64 = self.db.query_row(&count_sql, [], |row| row.get(0))?;
+
+        if count as usize <= limit {
             return Ok(());
         }
 
-        let to_delete = count as usize - self.max_items;
+        let to_delete = count as usize - limit;
 
-        let mut stmt = self.db.prepare(
-            "SELECT id, image_path FROM clipboard_items ORDER BY last_copied_at ASC LIMIT ?1",
-        )?;
+        let select_sql = format!(
+            "SELECT id, image_path FROM clipboard_items WHERE {} ORDER BY last_copied_at ASC LIMIT ?1",
+            where_clause
+        );
+        let mut stmt = self.db.prepare(&select_sql)?;
         let items: Vec<(i64, Option<String>)> = stmt
             .query_map(params![to_delete as i64], |row| Ok((row.get(0)?, row.get(1)?)))?
             .filter_map(|r| r.ok())

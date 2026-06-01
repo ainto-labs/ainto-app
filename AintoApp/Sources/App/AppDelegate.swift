@@ -164,10 +164,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func initializeRustCore() {
-        // Initialize clipboard store with default max items
-        let _ = rc_clipboard_init(200)
+        // Read per-pool limits from config.toml so eviction matches what
+        // the user sees in Settings ("Max text items" / "Max image items").
+        // Falls back to the same defaults the Settings UI shows.
+        let (maxText, maxImage) = loadClipboardLimits()
+        let _ = rc_clipboard_init(UInt64(maxText), UInt64(maxImage))
 
         // Discover apps (without icons — Swift loads icons via NSWorkspace)
         let _ = rc_discover_apps(false)
+    }
+
+    private func loadClipboardLimits() -> (text: Int, image: Int) {
+        guard let cstr = rc_config_load() else { return (200, 50) }
+        defer { rc_free_string(cstr) }
+        let json = String(cString: cstr)
+        guard let data = json.data(using: .utf8),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return (200, 50) }
+        let text = dict["clipboard_max_items"] as? Int ?? 200
+        let image = dict["clipboard_max_image_items"] as? Int ?? 50
+        return (text, image)
     }
 }
