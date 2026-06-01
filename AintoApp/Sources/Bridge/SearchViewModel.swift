@@ -357,6 +357,24 @@ final class SearchViewModel: ObservableObject {
         }
     }
 
+    /// Re-scan installed applications in the background, then refresh the
+    /// visible results. Picks up apps installed (or removed) since launch,
+    /// since `rc_discover_apps` otherwise only runs once at startup.
+    /// Runs off the main thread so panel appearance isn't blocked.
+    func refreshApps() {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let _ = rc_discover_apps(false)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.page == .main else { return }
+                if self.query.isEmpty {
+                    self.results = self.buildDefaultResults()
+                } else {
+                    self.performSearch(query: self.query)
+                }
+            }
+        }
+    }
+
     // MARK: - Navigation
 
     func goToSnippets() {

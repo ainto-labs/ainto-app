@@ -98,6 +98,8 @@ final class SearchPanel: NSPanel {
         // Do NOT call NSApp.activate — keep the previous app focused
         makeKeyAndOrderFront(nil)
         viewModel.selectAll()
+        // Pick up apps installed/removed since the last time the panel opened.
+        viewModel.refreshApps()
     }
 
     func hidePanel() {
@@ -140,9 +142,7 @@ final class SearchPanel: NSPanel {
 
         // Hide panel and activate previous app
         hidePanel()
-        if let app = previousApp {
-            app.activate()
-        }
+        previousApp?.activate()
 
         // Wait for app activation, then simulate Cmd+C
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
