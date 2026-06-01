@@ -115,6 +115,9 @@ static USER_APP_DIRS: LazyLock<Vec<PathBuf>> = LazyLock::new(|| {
     let mut dirs = vec![
         PathBuf::from("/Applications/"),
         PathBuf::from("/System/Applications/"),
+        // User-facing system utilities (Keychain Access, Screen Sharing, etc.)
+        // live here, not in /System/Applications/.
+        PathBuf::from("/System/Library/CoreServices/Applications/"),
     ];
     if let Some(home) = env::var_os("HOME") {
         dirs.push(Path::new(&home).join("Applications/"));
@@ -148,7 +151,10 @@ fn is_helper_location(path: &Path) -> bool {
         || s.contains("/Library/PrivilegedHelperTools/")
         // Exclude system internals and support bundles — user-facing apps
         // live in /Applications/, /System/Applications/, or ~/Applications/.
-        || s.starts_with("/System/Library/")
+        // Exception: /System/Library/CoreServices/Applications/ holds user-facing
+        // system utilities (Keychain Access, Screen Sharing, etc.).
+        || (s.starts_with("/System/Library/")
+            && !s.starts_with("/System/Library/CoreServices/Applications/"))
         || s.starts_with("/Library/Apple/System/")
         || s.starts_with("/Library/Application Support/")
 }
