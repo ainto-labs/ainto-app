@@ -168,9 +168,22 @@ fn query_app(path: &Path, store_icons: bool) -> Option<AppEntry> {
     let url = NSURL::fileURLWithPath(&NSString::from_str(&path.to_string_lossy()));
     let bundle = NSBundle::bundleWithURL(&url)?;
     let info = bundle.infoDictionary()?;
+    // Localized Info.plist values (from InfoPlist.strings). Some apps ship a
+    // lowercased CFBundleName in Info.plist but override it here with the proper
+    // display name (e.g. "logioptionsplus" → "Logi Options+").
+    let localized_info = bundle.localizedInfoDictionary();
 
     let get_string = |key: &NSString| -> Option<String> {
         info.objectForKey(key)?
+            .downcast::<NSString>()
+            .ok()
+            .map(|s| s.to_string())
+    };
+
+    let get_localized_string = |key: &NSString| -> Option<String> {
+        localized_info
+            .as_ref()?
+            .objectForKey(key)?
             .downcast::<NSString>()
             .ok()
             .map(|s| s.to_string())
@@ -208,7 +221,9 @@ fn query_app(path: &Path, store_icons: bool) -> Option<AppEntry> {
         return None;
     }
 
-    let name = get_string(ns_string!("CFBundleDisplayName"))
+    let name = get_localized_string(ns_string!("CFBundleDisplayName"))
+        .or_else(|| get_localized_string(ns_string!("CFBundleName")))
+        .or_else(|| get_string(ns_string!("CFBundleDisplayName")))
         .or_else(|| get_string(ns_string!("CFBundleName")))
         .or_else(|| {
             path.file_stem()
