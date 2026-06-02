@@ -142,7 +142,23 @@ fn is_nested_inside_another_app(app_path: &Path) -> bool {
     false
 }
 
+/// User-facing apps that live directly in /System/Library/CoreServices/ rather than
+/// the .../Applications/ subfolder. Finder is the canonical example — everything else
+/// in that directory is a system agent (Dock, loginwindow, SystemUIServer, etc.) or
+/// internal tooling (Apple Diagnostics, Enhanced Logging) that we don't want to surface.
+fn is_allowed_core_service_app(path: &Path) -> bool {
+    const ALLOWED: &[&str] = &["Finder.app"];
+    path.file_name()
+        .is_some_and(|n| ALLOWED.contains(&n.to_string_lossy().as_ref()))
+}
+
 fn is_helper_location(path: &Path) -> bool {
+    // A few user-facing apps live directly in /System/Library/CoreServices/
+    // (notably Finder) and must escape the blanket /System/Library/ filter below.
+    if is_allowed_core_service_app(path) {
+        return false;
+    }
+
     let s = path.to_string_lossy();
     s.contains("/Contents/Library/LoginItems/")
         || s.contains("/Contents/XPCServices/")
