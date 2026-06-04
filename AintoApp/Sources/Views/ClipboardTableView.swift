@@ -47,6 +47,16 @@ struct ClipboardTableView: NSViewRepresentable {
         scrollView.documentView = tableView
         context.coordinator.tableView = tableView
 
+        // Observe scroll position so mouse/trackpad scrolling (not just arrow
+        // keys) triggers pagination load-more when nearing the bottom.
+        scrollView.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.clipViewBoundsDidChange(_:)),
+            name: NSView.boundsDidChangeNotification,
+            object: scrollView.contentView
+        )
+
         // Register callback so arrow keys bypass SwiftUI and move NSTableView directly
         let coordinator = context.coordinator
         viewModel.onClipboardSelectionMove = { [weak coordinator] newIndex in
@@ -61,19 +71,33 @@ struct ClipboardTableView: NSViewRepresentable {
         let coordinator = context.coordinator
 
         // Compare item IDs to detect data changes (count alone misses delete+pagination backfill)
-        let dataChanged = coordinator.parent.items.map(\.id) != items.map(\.id)
+        let oldIDs = coordinator.parent.items.map(\.id)
+        let newIDs = items.map(\.id)
+        let dataChanged = oldIDs != newIDs
+        // A pagination backfill appends to the bottom: the old IDs stay as a
+        // prefix and more are added. Those rows don't move, so we must preserve
+        // the scroll position instead of jumping to the selected row.
+        let isAppend = newIDs.count > oldIDs.count && Array(newIDs.prefix(oldIDs.count)) == oldIDs
 
         coordinator.parent = self
 
         if dataChanged {
-            tableView.reloadData()
-            // After data reload, sync selection
-            let row = coordinator.flatRow(for: selectedIndex)
-            if row >= 0 {
-                coordinator.suppressSelectionCallback = true
-                tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
-                tableView.scrollRowToVisible(row)
-                coordinator.suppressSelectionCallback = false
+            if isAppend {
+                let savedOrigin = scrollView.contentView.bounds.origin
+                tableView.reloadData()
+                tableView.layoutSubtreeIfNeeded()
+                scrollView.contentView.scroll(to: savedOrigin)
+                scrollView.reflectScrolledClipView(scrollView.contentView)
+            } else {
+                tableView.reloadData()
+                // After a reset (filter/delete), sync selection into view
+                let row = coordinator.flatRow(for: selectedIndex)
+                if row >= 0 {
+                    coordinator.suppressSelectionCallback = true
+                    tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+                    tableView.scrollRowToVisible(row)
+                    coordinator.suppressSelectionCallback = false
+                }
             }
         }
         // Selection changes are handled by onClipboardSelectionMove callback,
@@ -206,6 +230,24 @@ struct ClipboardTableView: NSViewRepresentable {
             if globalIndex >= parent.items.count - 5 {
                 parent.onScrolledNearBottom?()
             }
+        }
+
+        /// Mouse/trackpad scroll handler — load the next page when the visible
+        /// area nears the bottom (within ~2 rows). loadMoreClipboardItems guards
+        /// on clipboardHasMore, so firing repeatedly is harmless.
+        @objc func clipViewBoundsDidChange(_ notification: Notification) {
+            guard let clipView = notification.object as? NSClipView,
+                  let documentView = clipView.documentView else { return }
+            let contentHeight = documentView.bounds.height
+            guard contentHeight > 0 else { return }
+            let threshold = (tableView?.rowHeight ?? 44) * 2
+            if clipView.bounds.maxY >= contentHeight - threshold {
+                parent.onScrolledNearBottom?()
+            }
+        }
+
+        deinit {
+            NotificationCenter.default.removeObserver(self)
         }
 
         @objc func handleDoubleClick(_ sender: NSTableView) {
