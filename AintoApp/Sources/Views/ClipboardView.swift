@@ -205,7 +205,7 @@ struct ClipboardPreview: View {
                         .padding(12)
                     default:
                         ScrollView {
-                            Text(item.text ?? "")
+                            Text(Self.previewText(item.text ?? ""))
                                 .font(.system(size: 13, design: .monospaced))
                                 .foregroundColor(.primary)
                                 .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -280,6 +280,18 @@ struct ClipboardPreview: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+
+    /// SwiftUI `Text` layout cost explodes on very large strings (hundreds of KB),
+    /// pegging the main thread at 100% CPU in nested stack/flex-frame
+    /// `sizeThatFits` passes and freezing the whole app. The preview is only a
+    /// preview, so cap what we hand to `Text`. The full content stays in the DB
+    /// and is pasted intact.
+    private static let maxPreviewChars = 20_000
+    private static func previewText(_ text: String) -> String {
+        guard text.count > maxPreviewChars else { return text }
+        return String(text.prefix(maxPreviewChars))
+            + "\n\n… (preview truncated — \(text.count) characters total)"
     }
 
     private func loadMetadata(for item: ClipboardItem) async {
