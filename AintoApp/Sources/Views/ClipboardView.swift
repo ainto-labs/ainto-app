@@ -115,6 +115,15 @@ struct ClipboardView: View {
                 }
                 .frame(height: 360)
                 .onAppear { previewItem = selectedItem }
+                // The list can change under a fixed selection index — e.g. a new
+                // clipboard item is inserted at the top — so the selected item's
+                // identity changes without an onSelectionChanged callback, leaving
+                // the preview stale. Refresh when that happens. This is cheap:
+                // clipboardSelectedIndex is not @Published, so this only
+                // re-evaluates on real list changes, never on arrow-key navigation.
+                .onChange(of: selectedItem?.id) { _, _ in
+                    schedulePreviewUpdate()
+                }
             }
 
             // Footer
