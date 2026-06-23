@@ -180,8 +180,27 @@ struct ClipboardItem: Identifiable {
             }
             return "File"
         default:
-            return text?.components(separatedBy: .newlines).first ?? ""
+            return text.map { Self.firstContentLine(of: $0) } ?? ""
         }
+    }
+
+    /// First line of actual content for the list: skips leading blank lines and
+    /// indentation so the row shows real data instead of empty space. Scans only
+    /// the leading whitespace plus that first line (capped) — never splits the
+    /// whole string, which matters for very large clipboard entries.
+    private static func firstContentLine(of text: String, maxChars: Int = 500) -> String {
+        var start = text.startIndex
+        while start < text.endIndex, text[start].isWhitespace {
+            start = text.index(after: start)
+        }
+        guard start < text.endIndex else { return "" }
+        var end = start
+        var count = 0
+        while end < text.endIndex, !text[end].isNewline, count < maxChars {
+            end = text.index(after: end)
+            count += 1
+        }
+        return String(text[start..<end])
     }
 
     var iconName: String {
