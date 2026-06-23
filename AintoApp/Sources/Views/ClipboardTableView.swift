@@ -196,7 +196,25 @@ struct ClipboardTableView: NSViewRepresentable {
             guard row >= 0, row < flatRows.count else { return }
             if case .item(_, let globalIndex) = flatRows[row] {
                 parent.selectedIndex = globalIndex
+                // Mouse clicks change the selection through here (arrow keys go
+                // through moveToIndex). The native selection highlight is disabled,
+                // so update our custom highlight box ourselves, or a click leaves
+                // no visible selection.
+                refreshVisibleHighlights(selectedRow: row)
                 parent.onSelectionChanged?(globalIndex)
+            }
+        }
+
+        /// Repaint the custom highlight on the visible cells so exactly the
+        /// selected row is highlighted. Touches only on-screen cells and never
+        /// reloads (which would re-read the icon from disk).
+        private func refreshVisibleHighlights(selectedRow: Int) {
+            guard let tableView else { return }
+            let visible = tableView.rows(in: tableView.visibleRect)
+            guard visible.length > 0 else { return }
+            for r in visible.location..<(visible.location + visible.length) {
+                guard let cell = tableView.view(atColumn: 0, row: r, makeIfNecessary: false) as? ClipboardCellView else { continue }
+                cell.updateHighlight(isSelected: r == selectedRow)
             }
         }
 
