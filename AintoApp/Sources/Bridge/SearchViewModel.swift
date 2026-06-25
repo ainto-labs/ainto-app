@@ -303,6 +303,10 @@ final class SearchViewModel: ObservableObject {
     @Published var isEditingSnippet = false
     @Published var editingSnippet: SnippetItem?
 
+    // AI master switch (config: ai_enabled). When false, all AI surfaces
+    // are hidden from the launcher.
+    @Published var aiEnabled: Bool = true
+
     // AI Commands state
     @Published var aiCommands: [AICommand] = []
     @Published var aiCommandSelectedIndex: Int = 0
@@ -539,40 +543,43 @@ final class SearchViewModel: ObservableObject {
         var commandResults: [SearchResult] = []
         let q = query.lowercased()
 
-        // AI commands (built-in + custom) — fuzzy match
-        let matchingAICommands = AICommand.loadAll().filter { cmd in
-            fuzzyMatch(q, cmd.name)
-        }
-        let rankedAICommands = matchingAICommands.sorted { a, b in
-            self.commandRanking(for: a.name) > self.commandRanking(for: b.name)
-        }
-        for cmd in rankedAICommands.prefix(6) {
-            let command = cmd
-            let cmdScore = fuzzyScore(q, command.name) + self.commandRanking(for: command.name)
-            var result = SearchResult(
-                title: command.name,
-                subtitle: "AI Command",
-                icon: nil,
-                systemIcon: command.icon,
-                score: cmdScore
-            ) { [weak self] in
-                self?.incrementCommandRanking(command.name)
-                self?.executeAICommand(command)
+        // AI commands (built-in + custom) — fuzzy match. Hidden entirely when
+        // the AI master switch is off.
+        if aiEnabled {
+            let matchingAICommands = AICommand.loadAll().filter { cmd in
+                fuzzyMatch(q, cmd.name)
             }
-            result.actions = aiCommandActions(for: command)
-            commandResults.append(result)
-        }
+            let rankedAICommands = matchingAICommands.sorted { a, b in
+                self.commandRanking(for: a.name) > self.commandRanking(for: b.name)
+            }
+            for cmd in rankedAICommands.prefix(6) {
+                let command = cmd
+                let cmdScore = fuzzyScore(q, command.name) + self.commandRanking(for: command.name)
+                var result = SearchResult(
+                    title: command.name,
+                    subtitle: "AI Command",
+                    icon: nil,
+                    systemIcon: command.icon,
+                    score: cmdScore
+                ) { [weak self] in
+                    self?.incrementCommandRanking(command.name)
+                    self?.executeAICommand(command)
+                }
+                result.actions = aiCommandActions(for: command)
+                commandResults.append(result)
+            }
 
-        if fuzzyMatch(q, "ai commands") || fuzzyMatch(q, "manage ai commands") {
-            commandResults.append(SearchResult(
-                title: "AI Commands",
-                subtitle: "Manage AI Commands",
-                icon: nil,
-                systemIcon: "sparkle",
-                score: fuzzyScore(q, "AI Commands")
-            ) { [weak self] in
-                self?.goToAICommands()
-            })
+            if fuzzyMatch(q, "ai commands") || fuzzyMatch(q, "manage ai commands") {
+                commandResults.append(SearchResult(
+                    title: "AI Commands",
+                    subtitle: "Manage AI Commands",
+                    icon: nil,
+                    systemIcon: "sparkle",
+                    score: fuzzyScore(q, "AI Commands")
+                ) { [weak self] in
+                    self?.goToAICommands()
+                })
+            }
         }
 
         if fuzzyMatch(q, "snippets") {
@@ -880,6 +887,35 @@ final class SearchViewModel: ObservableObject {
         aiCommandSelectedIndex = 0
     }
 
+    /// Load the `ai_enabled` master switch from config.toml. Called at startup
+    /// and each time the panel opens, so toggling it in Settings takes effect
+    /// the next time the launcher is shown.
+    func loadAIEnabled() {
+        guard let cStr = rc_config_load() else { return }
+        let jsonStr = String(cString: cStr)
+        rc_free_string(cStr)
+        guard let data = jsonStr.data(using: .utf8),
+              let config = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+        aiEnabled = config["ai_enabled"] as? Bool ?? true
+        exitAISurfacesIfDisabled()
+    }
+
+    /// When AI is disabled, leave any active AI surface (Claude chat or the AI
+    /// Commands page) so the launcher doesn't reopen mid-conversation or stuck
+    /// on a now-hidden page. No-op while AI is enabled.
+    private func exitAISurfacesIfDisabled() {
+        guard !aiEnabled else { return }
+        if page == .claude {
+            claudeCancel()
+            claudeMessages.removeAll()
+            claudeSessionId = nil
+        }
+        if page == .claude || page == .aiCommands {
+            page = .main
+        }
+        searchMode = .apps
+    }
+
     func saveAICommands() {
         let jsonArray: [[String: Any]] = aiCommands.map { cmd in
             ["name": cmd.name, "icon": cmd.icon, "prompt": cmd.prompt]
@@ -1059,31 +1095,34 @@ final class SearchViewModel: ObservableObject {
             systemIcon: "text.quote"
         ) { [weak self] in self?.goToSnippets() })
 
-        results.append(SearchResult(
-            title: "AI Commands",
-            subtitle: "Command",
-            icon: nil,
-            systemIcon: "sparkle"
-        ) { [weak self] in self?.goToAICommands() })
-
-        // AI Commands — sorted by usage, top 4
-        let aiCommands = AICommand.loadAll()
-        let sorted = aiCommands.sorted { a, b in
-            commandRanking(for: a.name) > commandRanking(for: b.name)
-        }
-        for cmd in sorted.prefix(4) {
-            let command = cmd
-            var result = SearchResult(
-                title: command.name,
-                subtitle: "AI Command",
+        // AI surfaces — hidden entirely when the AI master switch is off.
+        if aiEnabled {
+            results.append(SearchResult(
+                title: "AI Commands",
+                subtitle: "Command",
                 icon: nil,
-                systemIcon: command.icon
-            ) { [weak self] in
-                self?.incrementCommandRanking(command.name)
-                self?.executeAICommand(command)
+                systemIcon: "sparkle"
+            ) { [weak self] in self?.goToAICommands() })
+
+            // AI Commands — sorted by usage, top 4
+            let aiCommands = AICommand.loadAll()
+            let sorted = aiCommands.sorted { a, b in
+                commandRanking(for: a.name) > commandRanking(for: b.name)
             }
-            result.actions = aiCommandActions(for: command)
-            results.append(result)
+            for cmd in sorted.prefix(4) {
+                let command = cmd
+                var result = SearchResult(
+                    title: command.name,
+                    subtitle: "AI Command",
+                    icon: nil,
+                    systemIcon: command.icon
+                ) { [weak self] in
+                    self?.incrementCommandRanking(command.name)
+                    self?.executeAICommand(command)
+                }
+                result.actions = aiCommandActions(for: command)
+                results.append(result)
+            }
         }
 
         return results
@@ -1116,6 +1155,8 @@ final class SearchViewModel: ObservableObject {
     // MARK: - Claude
 
     func toggleSearchMode() {
+        // Claude mode is an AI surface — disabled when the master switch is off.
+        guard aiEnabled else { return }
         if searchMode == .apps {
             searchMode = .claude
             results = []
@@ -1127,6 +1168,7 @@ final class SearchViewModel: ObservableObject {
     }
 
     func claudeAsk() {
+        guard aiEnabled else { return }
         guard !query.isEmpty else { return }
         let prompt = query
 

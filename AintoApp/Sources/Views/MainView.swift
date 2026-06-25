@@ -73,18 +73,20 @@ struct MainView: View {
 
                 Spacer()
 
-                // Mode indicator
-                HStack(spacing: 4) {
-                    Text(viewModel.searchMode == .claude ? "Search" : "AI mode")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
-                    Text("Tab")
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(Color.primary.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                        .foregroundStyle(.tertiary)
+                // Mode indicator — hidden when AI is disabled
+                if viewModel.aiEnabled {
+                    HStack(spacing: 4) {
+                        Text(viewModel.searchMode == .claude ? "Search" : "AI mode")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.tertiary)
+                        Text("Tab")
+                            .font(.system(size: 10, weight: .medium, design: .rounded))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Color.primary.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .foregroundStyle(.tertiary)
+                    }
                 }
             }
             .padding(.horizontal, 20)
@@ -155,7 +157,9 @@ struct MainView: View {
                     if !viewModel.query.isEmpty {
                         KeyHint(keys: ["esc"], label: "clear")
                     }
-                    KeyHint(keys: ["Tab"], label: "AI mode")
+                    if viewModel.aiEnabled {
+                        KeyHint(keys: ["Tab"], label: "AI mode")
+                    }
                 }
             }
             .padding(.horizontal, 20)

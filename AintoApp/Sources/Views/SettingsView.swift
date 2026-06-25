@@ -13,7 +13,7 @@ struct SettingsView: View {
     @State private var clipboardImagePath: String = "~/.config/ainto/clipboard"
     @State private var debounceDelay: Int = 300
     @State private var claudeBinary: String = "claude"
-    @State private var claudeEnabled: Bool = true
+    @State private var aiEnabled: Bool = true
     @State private var snippetsEnabled: Bool = true
     @State private var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
     @State private var selectedHotkey: String = "⌘ ⇧ Space"
@@ -25,7 +25,7 @@ struct SettingsView: View {
     enum SettingsSection: String, CaseIterable {
         case general = "General"
         case clipboard = "Clipboard"
-        case claude = "Claude Code"
+        case ai = "AI"
         case snippets = "Snippets"
         case data = "Data"
         case about = "About"
@@ -34,7 +34,7 @@ struct SettingsView: View {
             switch self {
             case .general: return "gearshape"
             case .clipboard: return "doc.on.clipboard"
-            case .claude: return "sparkle"
+            case .ai: return "sparkle"
             case .snippets: return "text.quote"
             case .data: return "folder"
             case .about: return "info.circle"
@@ -47,21 +47,12 @@ struct SettingsView: View {
             // Sidebar — darker background
             VStack(spacing: 2) {
                 ForEach(SettingsSection.allCases, id: \.self) { section in
-                    if section == .claude {
-                        SidebarItemCustomIcon(
-                            title: section.rawValue,
-                            icon: { ClaudeIcon(size: 14) },
-                            isSelected: selectedSection == section
-                        )
-                        .onTapGesture { selectedSection = section }
-                    } else {
-                        SidebarItem(
-                            title: section.rawValue,
-                            icon: section.icon,
-                            isSelected: selectedSection == section
-                        )
-                        .onTapGesture { selectedSection = section }
-                    }
+                    SidebarItem(
+                        title: section.rawValue,
+                        icon: section.icon,
+                        isSelected: selectedSection == section
+                    )
+                    .onTapGesture { selectedSection = section }
                 }
                 Spacer()
             }
@@ -76,7 +67,7 @@ struct SettingsView: View {
                     switch selectedSection {
                     case .general: generalSection
                     case .clipboard: clipboardSection
-                    case .claude: claudeSection
+                    case .ai: aiSection
                     case .snippets: snippetsSection
                     case .data: dataSection
                     case .about: aboutSection
@@ -96,7 +87,7 @@ struct SettingsView: View {
         .onChange(of: clipboardMaxImageItems) { _, _ in saveConfig(); applyClipboardLimits() }
         .onChange(of: debounceDelay) { _, _ in saveConfig() }
         .onChange(of: claudeBinary) { _, _ in saveConfig() }
-        .onChange(of: claudeEnabled) { _, _ in saveConfig() }
+        .onChange(of: aiEnabled) { _, _ in saveConfig() }
         .onChange(of: snippetsEnabled) { _, _ in saveConfig() }
         .alert("Reset Rankings", isPresented: $showResetConfirm) {
             Button("Cancel", role: .cancel) {}
@@ -236,24 +227,33 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Claude
+    // MARK: - AI
 
-    private var claudeSection: some View {
+    private var aiSection: some View {
         VStack(alignment: .leading, spacing: 24) {
-            HStack(spacing: 8) {
-                ClaudeIcon(size: 18)
-                Text("Claude Code")
-                    .font(.system(size: 18, weight: .semibold))
-            }
+            SectionHeader(title: "AI", icon: "sparkle")
 
             SettingsCard {
-                VStack(spacing: 16) {
-                    SettingsRow(label: "Enabled") {
-                        Toggle("", isOn: $claudeEnabled).labelsHidden().toggleStyle(.switch)
-                    }
+                SettingsRow(label: "Enabled") {
+                    Toggle("", isOn: $aiEnabled).labelsHidden().toggleStyle(.switch)
+                }
+            }
 
-                    Divider().opacity(0.3)
+            Text("Hides every AI feature in the launcher when off, including AI Commands and Claude mode.")
+                .font(.system(size: 12))
+                .foregroundStyle(.tertiary)
+                .padding(.leading, 4)
 
+            if aiEnabled {
+                // Claude Code subsection
+                HStack(spacing: 6) {
+                    ClaudeIcon(size: 14)
+                    Text("Claude Code")
+                        .font(.system(size: 15, weight: .medium))
+                }
+                .padding(.top, 8)
+
+                SettingsCard {
                     SettingsRow(label: "Binary path") {
                         TextField("claude", text: $claudeBinary)
                             .textFieldStyle(.plain)
@@ -265,48 +265,48 @@ struct SettingsView: View {
                             .frame(maxWidth: 220)
                     }
                 }
-            }
 
-            Text("Press Tab in the launcher to switch to Claude mode.")
-                .font(.system(size: 12))
-                .foregroundStyle(.tertiary)
-                .padding(.leading, 4)
+                Text("Press Tab in the launcher to switch to Claude mode.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.tertiary)
+                    .padding(.leading, 4)
 
-            // AI Commands subsection
-            HStack(spacing: 6) {
-                Image(systemName: "sparkle")
-                    .font(.system(size: 14))
-                    .foregroundStyle(.secondary)
-                Text("AI Commands")
-                    .font(.system(size: 15, weight: .medium))
-            }
-            .padding(.top, 8)
-
-            SettingsCard {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("ai-commands.toml")
-                            .font(.system(size: 13))
-                        Text("Add, remove, or modify AI commands")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.tertiary)
-                    }
-                    Spacer()
-                    Button("Edit") {
-                        let _ = rc_ai_commands_load()
-                        let path = ("~/.config/ainto/ai-commands.toml" as NSString).expandingTildeInPath
-                        NSWorkspace.shared.open(URL(fileURLWithPath: path))
-                    }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 13))
-                    .foregroundColor(.accentColor)
+                // AI Commands subsection
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkle")
+                        .font(.system(size: 14))
+                        .foregroundStyle(.secondary)
+                    Text("AI Commands")
+                        .font(.system(size: 15, weight: .medium))
                 }
-            }
+                .padding(.top, 8)
 
-            Text("Use {selection} as placeholder for selected text in prompts.")
-                .font(.system(size: 12))
-                .foregroundStyle(.tertiary)
-                .padding(.leading, 4)
+                SettingsCard {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("ai-commands.toml")
+                                .font(.system(size: 13))
+                            Text("Add, remove, or modify AI commands")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.tertiary)
+                        }
+                        Spacer()
+                        Button("Edit") {
+                            let _ = rc_ai_commands_load()
+                            let path = ("~/.config/ainto/ai-commands.toml" as NSString).expandingTildeInPath
+                            NSWorkspace.shared.open(URL(fileURLWithPath: path))
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 13))
+                        .foregroundColor(.accentColor)
+                    }
+                }
+
+                Text("Use {selection} as placeholder for selected text in prompts.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.tertiary)
+                    .padding(.leading, 4)
+            }
         }
     }
 
@@ -515,7 +515,7 @@ struct SettingsView: View {
         clipboardMaxImageItems = config["clipboard_max_image_items"] as? Int ?? 50
         debounceDelay = config["debounce_delay"] as? Int ?? 300
         claudeBinary = config["claude_binary"] as? String ?? "claude"
-        claudeEnabled = config["claude_enabled"] as? Bool ?? true
+        aiEnabled = config["ai_enabled"] as? Bool ?? true
         snippetsEnabled = config["snippets_enabled"] as? Bool ?? true
         hasLoaded = true
     }
@@ -528,7 +528,7 @@ struct SettingsView: View {
             "search_dirs": ["~"],
             "debounce_delay": debounceDelay,
             "claude_binary": claudeBinary,
-            "claude_enabled": claudeEnabled,
+            "ai_enabled": aiEnabled,
             "snippets_enabled": snippetsEnabled,
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: config),
@@ -612,31 +612,6 @@ struct SidebarItem: View {
             Image(systemName: icon)
                 .font(.system(size: 13))
                 .frame(width: 18)
-            Text(title)
-                .font(.system(size: 14))
-            Spacer()
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background {
-            if isSelected {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.accentColor.opacity(0.2))
-            }
-        }
-        .foregroundStyle(isSelected ? .primary : .secondary)
-        .contentShape(Rectangle())
-    }
-}
-
-struct SidebarItemCustomIcon<Icon: View>: View {
-    let title: String
-    @ViewBuilder let icon: () -> Icon
-    let isSelected: Bool
-
-    var body: some View {
-        HStack(spacing: 8) {
-            icon().frame(width: 18)
             Text(title)
                 .font(.system(size: 14))
             Spacer()
