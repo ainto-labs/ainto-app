@@ -16,8 +16,10 @@ pub struct Config {
     pub search_dirs: Vec<String>,
     pub debounce_delay: u64,
     pub claude_binary: String,
-    pub claude_enabled: bool,
     pub snippets_enabled: bool,
+    /// Master switch for all AI-related features in the UI.
+    /// When false, the launcher hides every AI surface.
+    pub ai_enabled: bool,
 }
 
 impl Default for Config {
@@ -28,8 +30,8 @@ impl Default for Config {
             search_dirs: vec!["~".to_string()],
             debounce_delay: 300,
             claude_binary: "claude".to_string(),
-            claude_enabled: true,
             snippets_enabled: true,
+            ai_enabled: true,
         }
     }
 }
