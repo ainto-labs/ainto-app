@@ -73,7 +73,7 @@ final class SearchPanel: NSPanel {
             self?.grabSelectionFromPreviousApp(completion: completion)
         }
 
-        viewModel.loadAIEnabled()
+        viewModel.loadAISettings()
     }
 
     /// Whether the user has ever positioned the panel manually.
@@ -84,7 +84,7 @@ final class SearchPanel: NSPanel {
         previousApp = NSWorkspace.shared.frontmostApplication
 
         // Pick up any Settings change to the AI master switch.
-        viewModel.loadAIEnabled()
+        viewModel.loadAISettings()
 
         if !hasUserPosition {
             let screen = NSScreen.screens.first(where: {

@@ -307,6 +307,9 @@ final class SearchViewModel: ObservableObject {
     // are hidden from the launcher.
     @Published var aiEnabled: Bool = true
 
+    // Agent CLI binary to spawn for AI sessions (config: claude_binary).
+    var claudeBinary: String = "claude"
+
     // AI Commands state
     @Published var aiCommands: [AICommand] = []
     @Published var aiCommandSelectedIndex: Int = 0
@@ -887,16 +890,17 @@ final class SearchViewModel: ObservableObject {
         aiCommandSelectedIndex = 0
     }
 
-    /// Load the `ai_enabled` master switch from config.toml. Called at startup
-    /// and each time the panel opens, so toggling it in Settings takes effect
-    /// the next time the launcher is shown.
-    func loadAIEnabled() {
+    /// Load AI settings (`ai_enabled` master switch and the agent CLI binary)
+    /// from config.toml. Called at startup and each time the panel opens, so
+    /// changes in Settings take effect the next time the launcher is shown.
+    func loadAISettings() {
         guard let cStr = rc_config_load() else { return }
         let jsonStr = String(cString: cStr)
         rc_free_string(cStr)
         guard let data = jsonStr.data(using: .utf8),
               let config = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
         aiEnabled = config["ai_enabled"] as? Bool ?? true
+        claudeBinary = (config["claude_binary"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "claude"
         exitAISurfacesIfDisabled()
     }
 
@@ -1186,10 +1190,10 @@ final class SearchViewModel: ObservableObject {
         // Start session via Rust FFI
         // Only resume if we're on the Claude page already (continuing a conversation)
         let resumeId = (page == .claude) ? claudeSessionId : nil
-        guard let session = rc_claude_start(prompt, "claude", resumeId) else {
+        guard let session = rc_claude_start(prompt, claudeBinary, resumeId) else {
             // Update last message with error
             if let lastIdx = claudeMessages.indices.last {
-                claudeMessages[lastIdx].text = "Error: Could not start Claude. Is `claude` CLI installed?"
+                claudeMessages[lastIdx].text = "Error: Could not start AI session. Is `\(claudeBinary)` installed?"
             }
             claudeIsStreaming = false
             return
