@@ -63,9 +63,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         clipboardMonitor?.startMonitoring()
 
-        // Start global text expansion
+        // Start global text expansion (only while enabled in config)
         textExpander = TextExpander()
-        textExpander?.start()
+        applySnippetsEnabled()
 
         // Set up tray icon
         trayManager = TrayManager(hotkeyManager: hotkeyManager, onSettings: { [weak self] in
@@ -79,7 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Monitor config files for external changes and reload automatically.
     private func watchConfigDirectory() {
         let configDir = NSHomeDirectory() + "/.config/ainto"
-        let files = ["snippets.toml", "ai-commands.toml"]
+        let files = ["snippets.toml", "ai-commands.toml", "config.toml"]
 
         for file in files {
             let path = configDir + "/" + file
@@ -93,9 +93,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 queue: .main
             )
             source.setEventHandler { [weak self] in
-                self?.searchPanel?.viewModel.loadSnippets()
-                self?.searchPanel?.viewModel.loadAICommands()
-                self?.textExpander?.reloadSnippets()
+                if file == "config.toml" {
+                    // Covers both the Settings toggle (saved via rc_config_save)
+                    // and manual TOML edits.
+                    self?.applySnippetsEnabled()
+                } else {
+                    self?.searchPanel?.viewModel.loadSnippets()
+                    self?.searchPanel?.viewModel.loadAICommands()
+                    self?.textExpander?.reloadSnippets()
+                }
             }
             source.setCancelHandler { close(fd) }
             source.resume()
@@ -172,6 +178,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Discover apps (without icons — Swift loads icons via NSWorkspace)
         let _ = rc_discover_apps(false)
+    }
+
+    /// Start or stop the keystroke event tap to match `snippets_enabled` in
+    /// config.toml. Disabling snippets must actually tear down the CGEvent
+    /// tap — users expect no keystroke monitoring while the switch is off.
+    private func applySnippetsEnabled() {
+        if loadSnippetsEnabled() {
+            textExpander?.start()
+        } else {
+            textExpander?.stop()
+        }
+    }
+
+    private func loadSnippetsEnabled() -> Bool {
+        guard let cstr = rc_config_load() else { return true }
+        defer { rc_free_string(cstr) }
+        let json = String(cString: cstr)
+        guard let data = json.data(using: .utf8),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return true }
+        return dict["snippets_enabled"] as? Bool ?? true
     }
 
     private func loadClipboardLimits() -> (text: Int, image: Int) {

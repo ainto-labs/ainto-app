@@ -34,6 +34,9 @@ final class TextExpander {
     // MARK: - Public
 
     func start() {
+        // Already running — keep start/stop idempotent so config-driven
+        // toggling can call them freely.
+        guard eventTap == nil else { return }
         guard checkAccessibilityPermission() else {
             print("TextExpander: Accessibility permission not granted")
             requestAccessibilityPermission()
