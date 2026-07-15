@@ -11,7 +11,6 @@ struct SettingsView: View {
     @State private var clipboardMaxItems: Int = 200
     @State private var clipboardMaxImageItems: Int = 50
     @State private var clipboardImagePath: String = "~/.config/ainto/clipboard"
-    @State private var debounceDelay: Int = 300
     @State private var claudeBinary: String = "claude"
     @State private var aiEnabled: Bool = true
     @State private var snippetsEnabled: Bool = true
@@ -85,7 +84,6 @@ struct SettingsView: View {
         }
         .onChange(of: clipboardMaxItems) { _, _ in saveConfig(); applyClipboardLimits() }
         .onChange(of: clipboardMaxImageItems) { _, _ in saveConfig(); applyClipboardLimits() }
-        .onChange(of: debounceDelay) { _, _ in saveConfig() }
         .onChange(of: claudeBinary) { _, _ in saveConfig() }
         .onChange(of: aiEnabled) { _, _ in saveConfig() }
         .onChange(of: snippetsEnabled) { _, _ in saveConfig() }
@@ -134,19 +132,6 @@ struct SettingsView: View {
 
                     Divider().opacity(0.3)
 
-                    SettingsRow(label: "Search debounce") {
-                        HStack(spacing: 6) {
-                            Text("\(debounceDelay) ms")
-                                .font(.system(size: 13, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 60, alignment: .trailing)
-                            Stepper("", value: $debounceDelay, in: 100...1000, step: 50)
-                                .labelsHidden()
-                        }
-                    }
-
-                    Divider().opacity(0.3)
-
                     SettingsRow(label: "Launch at login") {
                         Toggle("", isOn: $launchAtLogin)
                             .labelsHidden()
@@ -165,11 +150,6 @@ struct SettingsView: View {
                     }
                 }
             }
-
-            Text("Debounce delay before file search triggers after typing stops.")
-                .font(.system(size: 12))
-                .foregroundStyle(.tertiary)
-                .padding(.leading, 4)
         }
     }
 
@@ -513,7 +493,6 @@ struct SettingsView: View {
 
         clipboardMaxItems = config["clipboard_max_items"] as? Int ?? 200
         clipboardMaxImageItems = config["clipboard_max_image_items"] as? Int ?? 50
-        debounceDelay = config["debounce_delay"] as? Int ?? 300
         claudeBinary = config["claude_binary"] as? String ?? "claude"
         aiEnabled = config["ai_enabled"] as? Bool ?? true
         snippetsEnabled = config["snippets_enabled"] as? Bool ?? true
@@ -525,8 +504,6 @@ struct SettingsView: View {
         let config: [String: Any] = [
             "clipboard_max_items": clipboardMaxItems,
             "clipboard_max_image_items": clipboardMaxImageItems,
-            "search_dirs": ["~"],
-            "debounce_delay": debounceDelay,
             "claude_binary": claudeBinary,
             "ai_enabled": aiEnabled,
             "snippets_enabled": snippetsEnabled,

@@ -2,7 +2,7 @@
 //!
 //! Reads/writes TOML config at `~/.config/ainto/config.toml`.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
@@ -13,8 +13,6 @@ use crate::Error;
 pub struct Config {
     pub clipboard_max_items: usize,
     pub clipboard_max_image_items: usize,
-    pub search_dirs: Vec<String>,
-    pub debounce_delay: u64,
     pub claude_binary: String,
     pub snippets_enabled: bool,
     /// Master switch for all AI-related features in the UI.
@@ -27,8 +25,6 @@ impl Default for Config {
         Self {
             clipboard_max_items: 200,
             clipboard_max_image_items: 50,
-            search_dirs: vec!["~".to_string()],
-            debounce_delay: 300,
             claude_binary: "claude".to_string(),
             snippets_enabled: true,
             ai_enabled: true,
@@ -72,14 +68,4 @@ impl Config {
 pub fn config_dir() -> Result<PathBuf, Error> {
     let home = dirs::home_dir().ok_or(Error::NoHomeDir)?;
     Ok(home.join(".config").join("ainto"))
-}
-
-/// Expand `~` in a path string to the home directory.
-pub fn expand_tilde(path: &str) -> PathBuf {
-    if let Some(rest) = path.strip_prefix('~') {
-        if let Some(home) = dirs::home_dir() {
-            return home.join(rest.strip_prefix('/').unwrap_or(rest));
-        }
-    }
-    Path::new(path).to_path_buf()
 }
