@@ -20,6 +20,12 @@
   English &middot; <a href="README.zh-TW.md">正體中文</a>
 </p>
 
+<p align="center">
+  <a href="https://github.com/ainto-labs/ainto-app/releases/latest/download/Ainto.dmg">
+    <img src="https://ainto.app/download-macos.svg" alt="Download for macOS">
+  </a>
+</p>
+
 ---
 
 ## Features
