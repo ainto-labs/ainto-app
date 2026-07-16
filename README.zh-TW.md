@@ -5,7 +5,7 @@
 <h1 align="center">Ainto</h1>
 
 <p align="center">
-  <strong>輕量、開源、內建 AI 整合的 macOS 啟動器。</strong><br>
+  <strong>輕量、開源、內建 AI 指令的 macOS 啟動器。</strong><br>
   <em>為喜歡保持簡單的工程師打造的 Spotlight 與 Raycast 替代方案。</em>
 </p>
 
