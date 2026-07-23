@@ -35,7 +35,7 @@
 | **AI** | Press Tab to chat, or select text → run & replace (Fix Grammar, Translate, Summarize, or your own) |
 | **App Search** | Fuzzy search and launch macOS apps instantly |
 | **Clipboard History** | Persistent history with text, image, and file support |
-| **Snippets** | Text expansion in any app with dynamic placeholders (`{date}`, `{clipboard}`) |
+| **Snippets** | Text expansion in any app with dynamic placeholders (`{date}`, `{clipboard}`, `{time}`, `{uuid}`) |
 
 > **AI & billing:** Ainto runs the Claude Code CLI on your Mac (`claude -p`), so AI usage is billed to your own Claude account — Ainto stores no API key and never charges you. See [how Claude meters Agent SDK / `claude -p` usage](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan).
 

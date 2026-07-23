@@ -76,9 +76,8 @@ pub fn resolve_placeholders(text: &str, clipboard_text: Option<&str>) -> String 
         .unwrap_or_default()
         .as_secs();
 
-    // Simple date/time formatting without chrono dependency
-    // Unix timestamp → date components
-    let (year, month, day, hour, min, sec) = unix_to_datetime(now as i64);
+    // Use the host timezone so snippets match the user's macOS clock.
+    let (year, month, day, hour, min, sec) = local_datetime(now as i64);
 
     let date_str = format!("{year:04}-{month:02}-{day:02}");
     let time_str = format!("{hour:02}:{min:02}:{sec:02}");
@@ -89,8 +88,33 @@ pub fn resolve_placeholders(text: &str, clipboard_text: Option<&str>) -> String 
         .replace("{uuid}", &uuid::Uuid::new_v4().to_string())
 }
 
-/// Minimal unix timestamp to date/time conversion (UTC).
-fn unix_to_datetime(timestamp: i64) -> (i32, u32, u32, u32, u32, u32) {
+/// Convert a Unix timestamp to local date/time without adding a date-time crate.
+#[cfg(target_os = "macos")]
+fn local_datetime(timestamp: i64) -> (i32, u32, u32, u32, u32, u32) {
+    let mut tm = std::mem::MaybeUninit::<libc::tm>::zeroed();
+    // `localtime_r` writes a fully initialized `tm` on success.
+    let result = unsafe { libc::localtime_r(&timestamp, tm.as_mut_ptr()) };
+    if result.is_null() {
+        return unix_to_datetime_utc(timestamp);
+    }
+    let tm = unsafe { tm.assume_init() };
+    (
+        tm.tm_year + 1900,
+        tm.tm_mon as u32 + 1,
+        tm.tm_mday as u32,
+        tm.tm_hour as u32,
+        tm.tm_min as u32,
+        tm.tm_sec as u32,
+    )
+}
+
+#[cfg(not(target_os = "macos"))]
+fn local_datetime(timestamp: i64) -> (i32, u32, u32, u32, u32, u32) {
+    unix_to_datetime_utc(timestamp)
+}
+
+/// Minimal Unix timestamp conversion used as a portable fallback.
+fn unix_to_datetime_utc(timestamp: i64) -> (i32, u32, u32, u32, u32, u32) {
     let secs_per_day: i64 = 86400;
     let days = timestamp / secs_per_day;
     let remaining_secs = (timestamp % secs_per_day) as u32;
@@ -150,6 +174,23 @@ mod tests {
         // Should be a valid date format
         assert!(result.len() == 10); // yyyy-MM-dd
         assert!(result.contains('-'));
+    }
+
+    #[test]
+    fn test_resolve_time_and_uuid_placeholders() {
+        let result = resolve_placeholders("{time} {uuid}", None);
+        let mut parts = result.split(' ');
+        let time = parts.next().unwrap();
+        let uuid = parts.next().unwrap();
+        assert_eq!(time.len(), 8);
+        assert!(time.as_bytes()[2] == b':' && time.as_bytes()[5] == b':');
+        assert_eq!(uuid.len(), 36);
+        assert_eq!(uuid.chars().filter(|c| *c == '-').count(), 4);
+    }
+
+    #[test]
+    fn test_missing_clipboard_resolves_to_empty() {
+        assert_eq!(resolve_placeholders("before{clipboard}after", None), "beforeafter");
     }
 
     #[test]
