@@ -196,16 +196,15 @@ mod tests {
 
     #[test]
     fn test_missing_clipboard_resolves_to_empty() {
-        assert_eq!(resolve_placeholders("before{clipboard}after", None), "beforeafter");
+        assert_eq!(
+            resolve_placeholders("before{clipboard}after", None),
+            "beforeafter"
+        );
     }
 
     #[test]
     fn test_snippet_expand() {
-        let snippet = Snippet::new(
-            "Test".into(),
-            "!test".into(),
-            "Today is {date}".into(),
-        );
+        let snippet = Snippet::new("Test".into(), "!test".into(), "Today is {date}".into());
         let expanded = snippet.expand(None);
         assert!(expanded.starts_with("Today is "));
     }
