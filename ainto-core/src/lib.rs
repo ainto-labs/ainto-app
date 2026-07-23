@@ -38,4 +38,7 @@ pub enum Error {
 
     #[error("Claude spawn error: {0}")]
     ClaudeSpawn(String),
+
+    #[error("Shell execution error: {0}")]
+    ShellExecution(String),
 }

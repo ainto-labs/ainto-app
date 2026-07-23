@@ -1,17 +1,60 @@
 //! Snippet management with TOML persistence and placeholder resolution.
 
+use std::io::Read;
 use std::path::Path;
+use std::process::{Command, Stdio};
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 
 use crate::Error;
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct Snippet {
     pub id: String,
     pub name: String,
+    #[serde(default = "default_mode")]
+    pub mode: String,
     pub keyword: String,
+    #[serde(default)]
     pub expansion: String,
+    #[serde(default)]
+    pub command: String,
+}
+
+fn default_mode() -> String {
+    "text".into()
+}
+
+impl Serialize for Snippet {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        #[derive(Serialize)]
+        struct SnippetWire<'a> {
+            id: &'a str,
+            name: &'a str,
+            mode: &'a str,
+            keyword: &'a str,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            expansion: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            command: Option<&'a str>,
+        }
+
+        let shell = self.is_shell();
+        SnippetWire {
+            id: &self.id,
+            name: &self.name,
+            mode: &self.mode,
+            keyword: &self.keyword,
+            expansion: (!shell && !self.expansion.is_empty()).then_some(&self.expansion),
+            command: (shell && !self.command.is_empty()).then_some(&self.command),
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
@@ -28,12 +71,74 @@ impl Snippet {
             name,
             keyword,
             expansion,
+            mode: default_mode(),
+            command: String::new(),
         }
     }
 
     /// Get the expanded text with placeholders resolved.
     pub fn expand(&self, clipboard_text: Option<&str>) -> String {
         resolve_placeholders(&self.expansion, clipboard_text)
+    }
+
+    pub fn is_shell(&self) -> bool {
+        self.mode.eq_ignore_ascii_case("shell")
+    }
+}
+
+const SHELL_TIMEOUT: Duration = Duration::from_secs(3);
+const MAX_SHELL_OUTPUT: usize = 1024 * 1024;
+
+/// Execute an explicitly configured shell snippet and return stdout.
+/// Commands are resolved with the same placeholders as text snippets.
+pub fn execute_shell(command: &str, clipboard_text: Option<&str>) -> Result<String, Error> {
+    let command = resolve_placeholders(command, clipboard_text);
+    let mut child = Command::new("/bin/zsh")
+        .args(["-c", &command])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| Error::ShellExecution(e.to_string()))?;
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| Error::ShellExecution("stdout unavailable".into()))?;
+    let (sender, receiver) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let mut limited = stdout.take((MAX_SHELL_OUTPUT + 1) as u64);
+        let result = limited.read_to_end(&mut bytes);
+        let _ = sender.send((result, bytes));
+    });
+
+    let deadline = Instant::now() + SHELL_TIMEOUT;
+    loop {
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|e| Error::ShellExecution(e.to_string()))?
+        {
+            let (_, bytes) = receiver
+                .recv_timeout(Duration::from_millis(100))
+                .map_err(|_| Error::ShellExecution("failed to read stdout".into()))?;
+            if bytes.len() > MAX_SHELL_OUTPUT {
+                return Err(Error::ShellExecution("stdout exceeds 1 MiB".into()));
+            }
+            if !status.success() {
+                return Err(Error::ShellExecution(format!("command exited with {status}")));
+            }
+            let output = String::from_utf8(bytes)
+                .map_err(|_| Error::ShellExecution("stdout is not UTF-8".into()))?;
+            return Ok(output.trim_end_matches(['\r', '\n']).to_string());
+        }
+
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(Error::ShellExecution("command timed out after 3 seconds".into()));
+        }
+        std::thread::sleep(Duration::from_millis(10));
     }
 }
 
@@ -207,5 +312,87 @@ mod tests {
         let snippet = Snippet::new("Test".into(), "!test".into(), "Today is {date}".into());
         let expanded = snippet.expand(None);
         assert!(expanded.starts_with("Today is "));
+    }
+
+    #[test]
+    fn test_shell_command_output_is_trimmed() {
+        let output = execute_shell("printf 'hello\\n'", None).unwrap();
+        assert_eq!(output, "hello");
+    }
+
+    #[test]
+    fn test_shell_command_resolves_placeholders() {
+        let output = execute_shell("printf '%s' '{clipboard}'", Some("copied")).unwrap();
+        assert_eq!(output, "copied");
+    }
+
+    #[test]
+    fn test_shell_command_failure_is_not_output() {
+        assert!(execute_shell("exit 7", None).is_err());
+    }
+
+    #[test]
+    fn test_legacy_snippet_defaults_to_text_mode() {
+        let snippet: Snippet = toml::from_str(
+            r#"
+            id = "legacy"
+            name = "Legacy"
+            keyword = ";legacy"
+            expansion = "hello"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(snippet.mode, "text");
+        assert!(snippet.command.is_empty());
+    }
+
+    #[test]
+    fn test_mode_specific_toml_fields() {
+        let text = Snippet::new("Text".into(), ";text".into(), "hello".into());
+        let text_toml = toml::to_string(&text).unwrap();
+        assert!(text_toml.contains("mode = \"text\""));
+        assert!(text_toml.contains("expansion = \"hello\""));
+        assert!(!text_toml.contains("command ="));
+
+        let shell = Snippet {
+            id: "shell".into(),
+            name: "Shell".into(),
+            mode: "shell".into(),
+            keyword: ";shell".into(),
+            expansion: "ignored".into(),
+            command: "printf ok".into(),
+        };
+        let shell_toml = toml::to_string(&shell).unwrap();
+        assert!(shell_toml.contains("mode = \"shell\""));
+        assert!(shell_toml.contains("command = \"printf ok\""));
+        assert!(!shell_toml.contains("expansion ="));
+        assert!(shell_toml.find("name =").unwrap() < shell_toml.find("mode =").unwrap());
+    }
+
+    #[test]
+    fn test_mode_specific_records_without_empty_fields_load() {
+        let file: SnippetFile = toml::from_str(
+            r#"
+            [[snippets]]
+            id = "text"
+            name = "ok"
+            mode = "text"
+            keyword = ";ok"
+            expansion = "test"
+
+            [[snippets]]
+            id = "shell"
+            name = "branch"
+            mode = "shell"
+            keyword = ";branch"
+            command = "printf main"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(file.snippets.len(), 2);
+        assert_eq!(file.snippets[0].expansion, "test");
+        assert!(file.snippets[0].command.is_empty());
+        assert!(file.snippets[1].expansion.is_empty());
+        assert_eq!(file.snippets[1].command, "printf main");
     }
 }

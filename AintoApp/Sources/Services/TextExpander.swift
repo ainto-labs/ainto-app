@@ -13,6 +13,12 @@ import AintoCore
 /// - System Settings → Privacy & Security → Input Monitoring
 @MainActor
 final class TextExpander {
+    private struct SnippetDefinition {
+        let mode: String
+        let expansion: String
+        let command: String
+    }
+
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
 
@@ -26,7 +32,7 @@ final class TextExpander {
     private static let bufferTimeout: TimeInterval = 10 // clear after 10s inactivity
 
     /// Snippet keyword → expansion mapping.
-    private static var snippetMap: [String: String] = [:]
+    private static var snippetMap: [String: SnippetDefinition] = [:]
 
     /// Trie for efficient keyword matching.
     private static var trie = Trie()
@@ -90,9 +96,13 @@ final class TextExpander {
         Self.trie = Trie()
 
         for entry in entries {
-            guard let keyword = entry["keyword"] as? String, !keyword.isEmpty,
-                  let expansion = entry["expansion"] as? String else { continue }
-            Self.snippetMap[keyword] = expansion
+            guard let keyword = entry["keyword"] as? String, !keyword.isEmpty else { continue }
+            let definition = SnippetDefinition(
+                mode: entry["mode"] as? String ?? "text",
+                expansion: entry["expansion"] as? String ?? "",
+                command: entry["command"] as? String ?? ""
+            )
+            Self.snippetMap[keyword] = definition
             Self.trie.insert(keyword)
         }
         Self.lock.unlock()
@@ -195,14 +205,14 @@ final class TextExpander {
         }
 
         // Check if buffer ends with any snippet keyword
-        if let (keyword, expansion) = findMatch() {
+        if let (keyword, snippet) = findMatch() {
             // Remove the keyword from the buffer
             buffer = String(buffer.dropLast(keyword.count))
             lock.unlock()
 
             // Perform replacement on main thread
             DispatchQueue.main.async {
-                performReplacement(keywordLength: keyword.count, expansion: expansion)
+                performReplacement(keyword: keyword, snippet: snippet)
             }
 
             // Suppress the last keystroke (it's part of the keyword)
@@ -214,27 +224,49 @@ final class TextExpander {
     }
 
     /// Check if the buffer ends with any snippet keyword.
-    private static func findMatch() -> (keyword: String, expansion: String)? {
+    private static func findMatch() -> (keyword: String, snippet: SnippetDefinition)? {
         // Check from longest possible match to shortest
         let maxLen = min(buffer.count, maxBufferLength)
         for len in stride(from: maxLen, through: 1, by: -1) {
             let suffix = String(buffer.suffix(len))
-            if trie.contains(suffix), let expansion = snippetMap[suffix] {
-                // Resolve placeholders
-                var resolved = expansion
-                let clipboardText = NSPasteboard.general.string(forType: .string)
-                if let cStr = rc_snippet_expand(expansion, clipboardText) {
-                    resolved = String(cString: cStr)
-                    rc_free_string(cStr)
-                }
-                return (suffix, resolved)
+            if trie.contains(suffix), let snippet = snippetMap[suffix] {
+                return (suffix, snippet)
             }
         }
         return nil
     }
 
     /// Delete the keyword characters and type the expansion.
-    private static func performReplacement(keywordLength: Int, expansion: String) {
+    private static func performReplacement(keyword: String, snippet: SnippetDefinition) {
+        if snippet.mode.caseInsensitiveCompare("shell") == .orderedSame {
+            let clipboardText = NSPasteboard.general.string(forType: .string)
+            DispatchQueue.global(qos: .userInitiated).async {
+                guard let cStr = rc_snippet_execute(snippet.command, clipboardText) else {
+                    // The final trigger character was suppressed; restore the full keyword.
+                    DispatchQueue.main.async {
+                        replaceKeywordAndPaste(keywordLength: keyword.count, text: keyword)
+                    }
+                    return
+                }
+                let output = String(cString: cStr)
+                rc_free_string(cStr)
+                DispatchQueue.main.async {
+                    replaceKeywordAndPaste(keywordLength: keyword.count, text: output)
+                }
+            }
+            return
+        }
+
+        let clipboardText = NSPasteboard.general.string(forType: .string)
+        var resolved = snippet.expansion
+        if let cStr = rc_snippet_expand(snippet.expansion, clipboardText) {
+            resolved = String(cString: cStr)
+            rc_free_string(cStr)
+        }
+        replaceKeywordAndPaste(keywordLength: keyword.count, text: resolved)
+    }
+
+    private static func replaceKeywordAndPaste(keywordLength: Int, text: String) {
         let source = CGEventSource(stateID: .combinedSessionState)
 
         // Step 1: Send backspace to delete the keyword (minus the last char which was suppressed)
@@ -253,7 +285,7 @@ final class TextExpander {
         let pasteboard = NSPasteboard.general
         let oldContents = pasteboard.string(forType: .string)
         pasteboard.clearContents()
-        pasteboard.setString(expansion, forType: .string)
+        pasteboard.setString(text, forType: .string)
         pasteboard.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
 
         // Simulate Cmd+V

@@ -274,9 +274,11 @@ struct SnippetItem: Identifiable {
     var name: String
     var keyword: String
     var expansion: String
+    var mode: String
+    var command: String
 
     static func new() -> SnippetItem {
-        SnippetItem(id: UUID().uuidString, name: "", keyword: "", expansion: "")
+        SnippetItem(id: UUID().uuidString, name: "", keyword: "", expansion: "", mode: "text", command: "")
     }
 }
 
@@ -522,16 +524,27 @@ final class SearchViewModel: ObservableObject {
                     }
                     .prefix(5)
                     .map { snippet in
+                        let id = snippet["id"] as? String ?? UUID().uuidString
                         let name = snippet["name"] as? String ?? ""
                         let keyword = snippet["keyword"] as? String ?? ""
                         let expansion = snippet["expansion"] as? String ?? ""
+                        let mode = snippet["mode"] as? String ?? "text"
+                        let command = snippet["command"] as? String ?? ""
+                        let item = SnippetItem(
+                            id: id,
+                            name: name,
+                            keyword: keyword,
+                            expansion: expansion,
+                            mode: mode,
+                            command: command
+                        )
                         return SearchResult(
                             title: name,
                             subtitle: "Snippet: \(keyword)",
                             icon: nil,
                             systemIcon: "doc.text.fill"
                         ) { [weak self] in
-                            self?.expandAndPasteSnippet(expansion)
+                            self?.expandAndPasteSnippet(item)
                         }
                     }
             }
@@ -801,7 +814,9 @@ final class SearchViewModel: ObservableObject {
                 id: entry["id"] as? String ?? UUID().uuidString,
                 name: entry["name"] as? String ?? "",
                 keyword: entry["keyword"] as? String ?? "",
-                expansion: entry["expansion"] as? String ?? ""
+                expansion: entry["expansion"] as? String ?? "",
+                mode: entry["mode"] as? String ?? "text",
+                command: entry["command"] as? String ?? ""
             )
         }
         snippetSelectedIndex = 0
@@ -809,7 +824,8 @@ final class SearchViewModel: ObservableObject {
 
     func saveSnippets() {
         let jsonArray: [[String: Any]] = snippets.map { s in
-            ["id": s.id, "name": s.name, "keyword": s.keyword, "expansion": s.expansion]
+            ["id": s.id, "name": s.name, "keyword": s.keyword, "expansion": s.expansion,
+             "mode": s.mode, "command": s.command]
         }
         guard let data = try? JSONSerialization.data(withJSONObject: jsonArray),
               let jsonStr = String(data: data, encoding: .utf8) else { return }
@@ -867,16 +883,34 @@ final class SearchViewModel: ObservableObject {
     func expandSelectedSnippet() {
         let items = filteredSnippets
         guard snippetSelectedIndex < items.count else { return }
-        expandAndPasteSnippet(items[snippetSelectedIndex].expansion)
+        expandAndPasteSnippet(items[snippetSelectedIndex])
     }
 
     /// Expand a snippet's placeholders, put the result on the pasteboard,
     /// and paste it into the frontmost app.
-    private func expandAndPasteSnippet(_ expansion: String) {
+    private func expandAndPasteSnippet(_ snippet: SnippetItem) {
         let clipboardText = NSPasteboard.general.string(forType: .string)
-        guard let cStr = rc_snippet_expand(expansion, clipboardText) else { return }
-        let expanded = String(cString: cStr)
-        rc_free_string(cStr)
+        if snippet.mode.caseInsensitiveCompare("shell") == .orderedSame {
+            let command = snippet.command
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                guard let cStr = rc_snippet_execute(command, clipboardText) else { return }
+                let expanded = String(cString: cStr)
+                rc_free_string(cStr)
+                DispatchQueue.main.async {
+                    self?.pasteExpandedSnippet(expanded)
+                }
+            }
+            return
+        }
+
+        if let cStr = rc_snippet_expand(snippet.expansion, clipboardText) {
+            let expanded = String(cString: cStr)
+            rc_free_string(cStr)
+            pasteExpandedSnippet(expanded)
+        }
+    }
+
+    private func pasteExpandedSnippet(_ expanded: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(expanded, forType: .string)
         onPasteAndHide?()

@@ -97,6 +97,10 @@ int32_t rc_snippets_save(const char* json);
 /// clipboard_text can be NULL
 const char* rc_snippet_expand(const char* expansion_text, const char* clipboard_text);
 
+/// Execute a shell snippet and return trimmed stdout; returns NULL on failure.
+/// clipboard_text can be NULL.
+const char* rc_snippet_execute(const char* command, const char* clipboard_text);
+
 // ============================================================
 // AI Commands
 // ============================================================

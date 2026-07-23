@@ -495,6 +495,21 @@ pub extern "C" fn rc_snippet_expand(
     to_c_string(&result)
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn rc_snippet_execute(
+    command: *const c_char,
+    clipboard_text: *const c_char,
+) -> *const c_char {
+    let Some(command) = from_c_str(command) else {
+        return ptr::null();
+    };
+    let clip = from_c_str(clipboard_text);
+    match snippets::execute_shell(&command, clip.as_deref()) {
+        Ok(output) => to_c_string(&output),
+        Err(_) => ptr::null(),
+    }
+}
+
 // ============================================================
 // AI Commands
 // ============================================================
