@@ -531,7 +531,8 @@ final class SearchViewModel: ObservableObject {
                             icon: nil,
                             systemIcon: "doc.text.fill"
                         ) {
-                            if let cStr = rc_snippet_expand(expansion, nil) {
+                            let clipboardText = NSPasteboard.general.string(forType: .string)
+                            if let cStr = rc_snippet_expand(expansion, clipboardText) {
                                 let expanded = String(cString: cStr)
                                 rc_free_string(cStr)
                                 NSPasteboard.general.clearContents()

@@ -92,6 +92,12 @@ pub fn resolve_placeholders(text: &str, clipboard_text: Option<&str>) -> String 
 #[cfg(target_os = "macos")]
 fn local_datetime(timestamp: i64) -> (i32, u32, u32, u32, u32, u32) {
     let mut tm = std::mem::MaybeUninit::<libc::tm>::zeroed();
+    // `localtime_r` is not required to refresh the process timezone state.
+    // Refresh it explicitly so runtime timezone changes are observed.
+    unsafe extern "C" {
+        fn tzset();
+    }
+    unsafe { tzset() };
     // `localtime_r` writes a fully initialized `tm` on success.
     let result = unsafe { libc::localtime_r(&timestamp, tm.as_mut_ptr()) };
     if result.is_null() {
