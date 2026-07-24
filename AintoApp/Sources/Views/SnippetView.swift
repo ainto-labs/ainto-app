@@ -206,6 +206,10 @@ struct SnippetPreview: View {
     let onEdit: () -> Void
     let onDelete: (String) -> Void
 
+    /// Expanded once per selection via .task(id:) — placeholder values like
+    /// {uuid} must stay stable across re-renders.
+    @State private var expandedText = ""
+
     var body: some View {
         if let snippet {
             VStack(spacing: 0) {
@@ -217,6 +221,9 @@ struct SnippetPreview: View {
                         .frame(maxWidth: .infinity, alignment: .topLeading)
                         .padding(12)
                         .textSelection(.enabled)
+                }
+                .task(id: snippet.id) {
+                    expandedText = Self.expand(snippet.expansion)
                 }
 
                 Divider().opacity(0.3)
@@ -268,11 +275,10 @@ struct SnippetPreview: View {
         }
     }
 
-    private var expandedText: String {
-        guard let snippet else { return "" }
+    private static func expand(_ expansion: String) -> String {
         let clipboardText = NSPasteboard.general.string(forType: .string)
-        guard let cStr = rc_snippet_expand(snippet.expansion, clipboardText) else {
-            return snippet.expansion
+        guard let cStr = rc_snippet_expand(expansion, clipboardText) else {
+            return expansion
         }
         defer { rc_free_string(cStr) }
         return String(cString: cStr)
