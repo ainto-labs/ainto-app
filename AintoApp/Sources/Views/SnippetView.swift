@@ -72,7 +72,7 @@ struct SnippetView: View {
                     Text("No snippets")
                         .font(.system(size: 14))
                         .foregroundStyle(.secondary)
-                    Text("Click + to create one")
+                    Text("Press ⌘N to create one")
                         .font(.system(size: 12))
                         .foregroundStyle(.tertiary)
                 }
