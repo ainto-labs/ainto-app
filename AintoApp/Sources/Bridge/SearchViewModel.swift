@@ -530,14 +530,8 @@ final class SearchViewModel: ObservableObject {
                             subtitle: "Snippet: \(keyword)",
                             icon: nil,
                             systemIcon: "doc.text.fill"
-                        ) {
-                            let clipboardText = NSPasteboard.general.string(forType: .string)
-                            if let cStr = rc_snippet_expand(expansion, clipboardText) {
-                                let expanded = String(cString: cStr)
-                                rc_free_string(cStr)
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(expanded, forType: .string)
-                            }
+                        ) { [weak self] in
+                            self?.expandAndPasteSnippet(expansion)
                         }
                     }
             }
@@ -873,16 +867,19 @@ final class SearchViewModel: ObservableObject {
     func expandSelectedSnippet() {
         let items = filteredSnippets
         guard snippetSelectedIndex < items.count else { return }
-        let snippet = items[snippetSelectedIndex]
+        expandAndPasteSnippet(items[snippetSelectedIndex].expansion)
+    }
 
+    /// Expand a snippet's placeholders, put the result on the pasteboard,
+    /// and paste it into the frontmost app.
+    private func expandAndPasteSnippet(_ expansion: String) {
         let clipboardText = NSPasteboard.general.string(forType: .string)
-        if let cStr = rc_snippet_expand(snippet.expansion, clipboardText) {
-            let expanded = String(cString: cStr)
-            rc_free_string(cStr)
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(expanded, forType: .string)
-            onPasteAndHide?()
-        }
+        guard let cStr = rc_snippet_expand(expansion, clipboardText) else { return }
+        let expanded = String(cString: cStr)
+        rc_free_string(cStr)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(expanded, forType: .string)
+        onPasteAndHide?()
     }
 
     // MARK: - AI Commands
