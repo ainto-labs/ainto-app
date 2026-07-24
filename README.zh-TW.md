@@ -35,7 +35,7 @@
 | **AI** | 按 Tab 開始對話，或選取文字後執行並取代（修正文法、翻譯、摘要，或自訂指令） |
 | **應用程式搜尋** | 模糊搜尋並即時啟動 macOS 應用程式 |
 | **剪貼簿歷史** | 持久化的歷史記錄，支援文字、圖片與檔案 |
-| **文字片段** | 在任何 app 中展開文字，支援動態佔位符（`{date}`、`{clipboard}`） |
+| **文字片段** | 在任何 app 中展開文字，支援動態佔位符（`{date}`、`{clipboard}`、`{time}`、`{uuid}`） |
 
 > **AI 與計費：** Ainto 透過你 Mac 上的 Claude Code（`claude -p`）執行 AI，用量計入你自己的 Claude 帳號。Ainto 不儲存 API key，也不向你收費。計費方式請見 [Claude 對 Agent SDK 與 `claude -p` 用量的說明](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan)。
 

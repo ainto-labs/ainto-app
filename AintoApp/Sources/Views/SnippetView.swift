@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import AintoCore
 
 /// Snippet management sub-page — list + preview/edit.
 struct SnippetView: View {
@@ -210,7 +211,7 @@ struct SnippetPreview: View {
             VStack(spacing: 0) {
                 // Expansion preview
                 ScrollView {
-                    Text(snippet.expansion)
+                    Text(expandedText)
                         .font(.system(size: 13, design: .monospaced))
                         .foregroundColor(.primary)
                         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -265,6 +266,16 @@ struct SnippetPreview: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+
+    private var expandedText: String {
+        guard let snippet else { return "" }
+        let clipboardText = NSPasteboard.general.string(forType: .string)
+        guard let cStr = rc_snippet_expand(snippet.expansion, clipboardText) else {
+            return snippet.expansion
+        }
+        defer { rc_free_string(cStr) }
+        return String(cString: cStr)
     }
 }
 
