@@ -92,9 +92,10 @@ const MAX_SHELL_OUTPUT: usize = 1024 * 1024;
 /// Execute an explicitly configured shell snippet and return stdout.
 /// Commands are resolved with the same placeholders as text snippets.
 pub fn execute_shell(command: &str, clipboard_text: Option<&str>) -> Result<String, Error> {
-    let command = resolve_placeholders(command, clipboard_text);
+    let command = resolve_shell_placeholders(command);
     let mut child = Command::new("/bin/zsh")
         .args(["-c", &command])
+        .env("AINTO_SNIPPET_CLIPBOARD", clipboard_text.unwrap_or(""))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -126,7 +127,9 @@ pub fn execute_shell(command: &str, clipboard_text: Option<&str>) -> Result<Stri
                 return Err(Error::ShellExecution("stdout exceeds 1 MiB".into()));
             }
             if !status.success() {
-                return Err(Error::ShellExecution(format!("command exited with {status}")));
+                return Err(Error::ShellExecution(format!(
+                    "command exited with {status}"
+                )));
             }
             let output = String::from_utf8(bytes)
                 .map_err(|_| Error::ShellExecution("stdout is not UTF-8".into()))?;
@@ -136,7 +139,9 @@ pub fn execute_shell(command: &str, clipboard_text: Option<&str>) -> Result<Stri
         if Instant::now() >= deadline {
             let _ = child.kill();
             let _ = child.wait();
-            return Err(Error::ShellExecution("command timed out after 3 seconds".into()));
+            return Err(Error::ShellExecution(
+                "command timed out after 3 seconds".into(),
+            ));
         }
         std::thread::sleep(Duration::from_millis(10));
     }
@@ -174,6 +179,10 @@ pub fn save_snippets(path: &Path, snippets: &[Snippet]) -> Result<(), Error> {
 /// - `{clipboard}` → current clipboard text
 /// - `{uuid}` → random UUID
 pub fn resolve_placeholders(text: &str, clipboard_text: Option<&str>) -> String {
+    resolve_static_placeholders(text).replace("{clipboard}", clipboard_text.unwrap_or(""))
+}
+
+fn resolve_static_placeholders(text: &str) -> String {
     use std::time::SystemTime;
 
     let now = SystemTime::now()
@@ -189,8 +198,82 @@ pub fn resolve_placeholders(text: &str, clipboard_text: Option<&str>) -> String 
 
     text.replace("{date}", &date_str)
         .replace("{time}", &time_str)
-        .replace("{clipboard}", clipboard_text.unwrap_or(""))
         .replace("{uuid}", &uuid::Uuid::new_v4().to_string())
+}
+
+const SHELL_CLIPBOARD_VAR: &str = "\"$AINTO_SNIPPET_CLIPBOARD\"";
+
+/// Resolve placeholders for shell commands without interpolating clipboard text
+/// into zsh source. Clipboard data is passed through an environment variable;
+/// single-quoted placeholders are rewritten with a safely quoted literal because
+/// variables do not expand inside single quotes.
+fn resolve_shell_placeholders(text: &str) -> String {
+    let resolved = resolve_static_placeholders(text);
+    let chars: Vec<char> = resolved.chars().collect();
+    let placeholder: Vec<char> = "{clipboard}".chars().collect();
+    let single_quote = 39 as char;
+    // A parameter expansion inside double quotes is not reparsed as shell code.
+    let quoted_clipboard = "\"$AINTO_SNIPPET_CLIPBOARD\"";
+
+    let mut output = String::with_capacity(text.len());
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    let mut index = 0;
+
+    while index < chars.len() {
+        let ch = chars[index];
+
+        if escaped {
+            output.push(ch);
+            escaped = false;
+            index += 1;
+            continue;
+        }
+
+        if ch == '\\' && quote != Some(single_quote) {
+            output.push(ch);
+            escaped = true;
+            index += 1;
+            continue;
+        }
+
+        if index + placeholder.len() <= chars.len()
+            && chars[index..index + placeholder.len()] == placeholder[..]
+        {
+            if quote == Some(single_quote) {
+                // Close the surrounding single quote, insert a shell-quoted
+                // value, then reopen it so surrounding text remains quoted.
+                output.push(single_quote);
+                output.push_str(quoted_clipboard);
+                output.push(single_quote);
+            } else if quote == Some('"') {
+                // The surrounding double quotes already protect expansion.
+                output.push_str("$AINTO_SNIPPET_CLIPBOARD");
+            } else {
+                output.push_str(SHELL_CLIPBOARD_VAR);
+            }
+            index += placeholder.len();
+            continue;
+        }
+
+        if ch == single_quote {
+            if quote == Some(single_quote) {
+                quote = None;
+            } else if quote.is_none() {
+                quote = Some(single_quote);
+            }
+        } else if ch == '"' {
+            if quote == Some('"') {
+                quote = None;
+            } else if quote.is_none() {
+                quote = Some('"');
+            }
+        }
+        output.push(ch);
+        index += 1;
+    }
+
+    output
 }
 
 /// Convert a Unix timestamp to local date/time without adding a date-time crate.
@@ -324,6 +407,20 @@ mod tests {
     fn test_shell_command_resolves_placeholders() {
         let output = execute_shell("printf '%s' '{clipboard}'", Some("copied")).unwrap();
         assert_eq!(output, "copied");
+    }
+
+    #[test]
+    fn test_shell_clipboard_is_not_reparsed_as_code() {
+        let clipboard = "O'Reilly; $(printf injected) && echo compromised";
+        let output = execute_shell("printf '%s' '{clipboard}'", Some(clipboard)).unwrap();
+        assert_eq!(output, clipboard);
+    }
+
+    #[test]
+    fn test_shell_clipboard_is_safe_inside_double_quotes() {
+        let clipboard = "$(printf injected) 'quoted'";
+        let output = execute_shell("printf '%s' \"{clipboard}\"", Some(clipboard)).unwrap();
+        assert_eq!(output, clipboard);
     }
 
     #[test]
