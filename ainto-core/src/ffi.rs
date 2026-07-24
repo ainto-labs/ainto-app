@@ -27,7 +27,10 @@ fn from_c_str(s: *const c_char) -> Option<String> {
     if s.is_null() {
         return None;
     }
-    unsafe { CStr::from_ptr(s) }.to_str().ok().map(|s| s.to_string())
+    unsafe { CStr::from_ptr(s) }
+        .to_str()
+        .ok()
+        .map(|s| s.to_string())
 }
 
 // ============================================================
@@ -173,7 +176,9 @@ pub extern "C" fn rc_get_top_apps(limit: u64) -> *const c_char {
 #[unsafe(no_mangle)]
 pub extern "C" fn rc_increment_ranking(key: *const c_char) -> i32 {
     let Some(k) = from_c_str(key) else { return -1 };
-    let Ok(cfg_dir) = config::config_dir() else { return -1 };
+    let Ok(cfg_dir) = config::config_dir() else {
+        return -1;
+    };
     let path = cfg_dir.join("ranking.toml");
     let score = crate::ranking::increment_and_save(&path, &k);
 
@@ -192,7 +197,9 @@ pub extern "C" fn rc_increment_ranking(key: *const c_char) -> i32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn rc_get_ranking(key: *const c_char) -> i32 {
     let Some(k) = from_c_str(key) else { return 0 };
-    let Ok(cfg_dir) = config::config_dir() else { return 0 };
+    let Ok(cfg_dir) = config::config_dir() else {
+        return 0;
+    };
     let path = cfg_dir.join("ranking.toml");
     crate::ranking::get_score(&path, &k)
 }
@@ -202,7 +209,9 @@ pub extern "C" fn rc_update_ranking(app_path: *const c_char) {
     let Some(key) = from_c_str(app_path) else {
         return;
     };
-    let Ok(cfg_dir) = config::config_dir() else { return };
+    let Ok(cfg_dir) = config::config_dir() else {
+        return;
+    };
     let path = cfg_dir.join("ranking.toml");
     let score = crate::ranking::increment_and_save(&path, &key);
 
@@ -261,10 +270,7 @@ pub extern "C" fn rc_clipboard_set_limits(max_text_items: u64, max_image_items: 
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rc_clipboard_insert_text(
-    text: *const c_char,
-    source_app: *const c_char,
-) -> i64 {
+pub extern "C" fn rc_clipboard_insert_text(text: *const c_char, source_app: *const c_char) -> i64 {
     let Some(text_str) = from_c_str(text) else {
         return -1;
     };
@@ -318,10 +324,7 @@ pub extern "C" fn rc_clipboard_insert_image(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rc_clipboard_insert_file(
-    path: *const c_char,
-    source_app: *const c_char,
-) -> i64 {
+pub extern "C" fn rc_clipboard_insert_file(path: *const c_char, source_app: *const c_char) -> i64 {
     let Some(path_str) = from_c_str(path) else {
         return -1;
     };
@@ -406,7 +409,11 @@ pub extern "C" fn rc_clipboard_search(query: *const c_char) -> *const c_char {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rc_clipboard_search_paged(query: *const c_char, limit: u64, offset: u64) -> *const c_char {
+pub extern "C" fn rc_clipboard_search_paged(
+    query: *const c_char,
+    limit: u64,
+    offset: u64,
+) -> *const c_char {
     let Some(q) = from_c_str(query) else {
         return to_c_string("[]");
     };

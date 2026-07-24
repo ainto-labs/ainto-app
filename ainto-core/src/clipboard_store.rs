@@ -148,7 +148,11 @@ impl ClipboardStore {
         self.get_recent_paged(limit, 0)
     }
 
-    pub fn get_recent_paged(&self, limit: usize, offset: usize) -> Result<Vec<ClipboardEntry>, Error> {
+    pub fn get_recent_paged(
+        &self,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<ClipboardEntry>, Error> {
         let mut stmt = self.db.prepare(
             "SELECT id, content_type, text_content, image_path, hash, source_app, last_copied_at, copy_count
              FROM clipboard_items
@@ -199,7 +203,12 @@ impl ClipboardStore {
         self.search_paged(query, 50, 0)
     }
 
-    pub fn search_paged(&self, query: &str, limit: usize, offset: usize) -> Result<Vec<ClipboardEntry>, Error> {
+    pub fn search_paged(
+        &self,
+        query: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<ClipboardEntry>, Error> {
         let pattern = format!("%{query}%");
         let mut stmt = self.db.prepare(
             "SELECT id, content_type, text_content, image_path, hash, source_app, last_copied_at, copy_count
@@ -214,7 +223,9 @@ impl ClipboardStore {
                 let content_type: String = row.get(1)?;
                 let text: Option<String> = row.get(2)?;
                 let content = match content_type.as_str() {
-                    "file" => ClipboardContent::File { path: text.unwrap_or_default() },
+                    "file" => ClipboardContent::File {
+                        path: text.unwrap_or_default(),
+                    },
                     _ => ClipboardContent::Text(text.unwrap_or_default()),
                 };
                 Ok(ClipboardEntry {
@@ -254,9 +265,9 @@ impl ClipboardStore {
 
     /// Clear all entries.
     pub fn clear(&mut self) -> Result<(), Error> {
-        let mut stmt = self.db.prepare(
-            "SELECT image_path FROM clipboard_items WHERE image_path IS NOT NULL",
-        )?;
+        let mut stmt = self
+            .db
+            .prepare("SELECT image_path FROM clipboard_items WHERE image_path IS NOT NULL")?;
         let paths: Vec<String> = stmt
             .query_map([], |row| row.get(0))?
             .filter_map(|r| r.ok())
@@ -310,7 +321,9 @@ impl ClipboardStore {
         );
         let mut stmt = self.db.prepare(&select_sql)?;
         let items: Vec<(i64, Option<String>)> = stmt
-            .query_map(params![to_delete as i64], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .query_map(params![to_delete as i64], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })?
             .filter_map(|r| r.ok())
             .collect();
 
@@ -353,9 +366,6 @@ pub fn rgba_to_png(rgba: &[u8], width: u32, height: u32) -> Result<Vec<u8>, Erro
     let img: ImageBuffer<Rgba<u8>, _> =
         ImageBuffer::from_raw(width, height, rgba.to_vec()).ok_or(Error::ImageEncode)?;
     let mut buf = Vec::new();
-    img.write_to(
-        &mut std::io::Cursor::new(&mut buf),
-        image::ImageFormat::Png,
-    )?;
+    img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)?;
     Ok(buf)
 }
