@@ -530,21 +530,13 @@ final class SearchViewModel: ObservableObject {
                         let expansion = snippet["expansion"] as? String ?? ""
                         let mode = snippet["mode"] as? String ?? "text"
                         let command = snippet["command"] as? String ?? ""
-                        let item = SnippetItem(
-                            id: id,
-                            name: name,
-                            keyword: keyword,
-                            expansion: expansion,
-                            mode: mode,
-                            command: command
-                        )
                         return SearchResult(
                             title: name,
                             subtitle: "Snippet: \(keyword)",
                             icon: nil,
                             systemIcon: "doc.text.fill"
                         ) { [weak self] in
-                            self?.expandAndPasteSnippet(item)
+                            self?.executeSnippet(mode: mode, expansion: expansion, command: command)
                         }
                     }
             }
@@ -883,15 +875,14 @@ final class SearchViewModel: ObservableObject {
     func expandSelectedSnippet() {
         let items = filteredSnippets
         guard snippetSelectedIndex < items.count else { return }
-        expandAndPasteSnippet(items[snippetSelectedIndex])
+        let snippet = items[snippetSelectedIndex]
+        executeSnippet(mode: snippet.mode, expansion: snippet.expansion, command: snippet.command)
     }
 
-    /// Expand a snippet's placeholders, put the result on the pasteboard,
-    /// and paste it into the frontmost app.
-    private func expandAndPasteSnippet(_ snippet: SnippetItem) {
-        let clipboardText = NSPasteboard.general.string(forType: .string)
-        if snippet.mode.caseInsensitiveCompare("shell") == .orderedSame {
-            let command = snippet.command
+    private func executeSnippet(mode: String, expansion: String, command: String) {
+        if mode.caseInsensitiveCompare("shell") == .orderedSame {
+            guard !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+            let clipboardText = NSPasteboard.general.string(forType: .string)
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 guard let cStr = rc_snippet_execute(command, clipboardText) else { return }
                 let expanded = String(cString: cStr)
@@ -903,7 +894,8 @@ final class SearchViewModel: ObservableObject {
             return
         }
 
-        if let cStr = rc_snippet_expand(snippet.expansion, clipboardText) {
+        let clipboardText = NSPasteboard.general.string(forType: .string)
+        if let cStr = rc_snippet_expand(expansion, clipboardText) {
             let expanded = String(cString: cStr)
             rc_free_string(cStr)
             pasteExpandedSnippet(expanded)

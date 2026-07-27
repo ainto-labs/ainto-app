@@ -6,6 +6,9 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
+#[cfg(target_os = "macos")]
+use std::os::unix::process::CommandExt;
+
 use serde::{Deserialize, Serialize, Serializer};
 
 use crate::Error;
@@ -93,12 +96,21 @@ const MAX_SHELL_OUTPUT: usize = 1024 * 1024;
 /// Commands are resolved with the same placeholders as text snippets.
 pub fn execute_shell(command: &str, clipboard_text: Option<&str>) -> Result<String, Error> {
     let command = resolve_shell_placeholders(command);
-    let mut child = Command::new("/bin/zsh")
+    if command.trim().is_empty() {
+        return Err(Error::ShellExecution("shell command is empty".into()));
+    }
+
+    let mut shell = Command::new("/bin/zsh");
+    shell
         .args(["-c", &command])
         .env("AINTO_SNIPPET_CLIPBOARD", clipboard_text.unwrap_or(""))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::null());
+    #[cfg(target_os = "macos")]
+    shell.process_group(0);
+
+    let mut child = shell
         .spawn()
         .map_err(|e| Error::ShellExecution(e.to_string()))?;
 
@@ -137,6 +149,18 @@ pub fn execute_shell(command: &str, clipboard_text: Option<&str>) -> Result<Stri
         }
 
         if Instant::now() >= deadline {
+            #[cfg(target_os = "macos")]
+            {
+                // `process_group(0)` makes the child the leader of a new
+                // process group. A negative PID targets the whole group,
+                // including descendants spawned by the shell command.
+                let process_group = child.id() as libc::pid_t;
+                if process_group > 0 {
+                    unsafe {
+                        libc::kill(-process_group, libc::SIGKILL);
+                    }
+                }
+            }
             let _ = child.kill();
             let _ = child.wait();
             return Err(Error::ShellExecution(
@@ -426,6 +450,32 @@ mod tests {
     #[test]
     fn test_shell_command_failure_is_not_output() {
         assert!(execute_shell("exit 7", None).is_err());
+    }
+
+    #[test]
+    fn test_empty_shell_command_is_rejected() {
+        let error = execute_shell("  \n\t", None).unwrap_err();
+        assert!(error.to_string().contains("shell command is empty"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_shell_timeout_kills_descendant_processes() {
+        let marker = std::env::temp_dir().join(format!(
+            "ainto-shell-timeout-{}.marker",
+            uuid::Uuid::new_v4()
+        ));
+        let quoted_marker = format!("'{}'", marker.to_string_lossy().replace('\'', "'\"'\"'"));
+        let command = format!("(sleep 4; : > {quoted_marker}) & wait");
+
+        let error = execute_shell(&command, None).unwrap_err();
+        assert!(error.to_string().contains("timed out after 3 seconds"));
+
+        // Without process-group cleanup, the descendant would still run and
+        // create the marker after the parent zsh has timed out.
+        std::thread::sleep(Duration::from_secs(2));
+        assert!(!marker.exists());
+        let _ = std::fs::remove_file(marker);
     }
 
     #[test]

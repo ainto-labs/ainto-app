@@ -237,10 +237,17 @@ final class TextExpander {
 
         // Check if buffer ends with any snippet keyword
         if let (keyword, snippet) = findMatch() {
+            let isShell = snippet.mode.caseInsensitiveCompare("shell") == .orderedSame
+            if isShell && snippet.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                // Keep the keyword intact when there is no command to run.
+                // Returning the event avoids consuming any part of the input.
+                lock.unlock()
+                return Unmanaged.passRetained(event)
+            }
+
             // Remove the keyword from the buffer
             buffer = String(buffer.dropLast(keyword.count))
 
-            let isShell = snippet.mode.caseInsensitiveCompare("shell") == .orderedSame
             if isShell {
                 nextShellReplacementID &+= 1
                 let replacementID = nextShellReplacementID
@@ -316,6 +323,10 @@ final class TextExpander {
     ) {
         if snippet.mode.caseInsensitiveCompare("shell") == .orderedSame {
             guard let replacementID, hasPendingShellReplacement(replacementID) else { return }
+            guard !snippet.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                cancelPendingShellReplacement(replacementID)
+                return
+            }
             let clipboardText = NSPasteboard.general.string(forType: .string)
             DispatchQueue.global(qos: .userInitiated).async {
                 guard let cStr = rc_snippet_execute(snippet.command, clipboardText) else {
