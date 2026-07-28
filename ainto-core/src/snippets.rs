@@ -92,6 +92,25 @@ impl Snippet {
 const SHELL_TIMEOUT: Duration = Duration::from_secs(3);
 const MAX_SHELL_OUTPUT: usize = 1024 * 1024;
 
+/// Stop the shell and any descendants that inherited its stdout pipe.
+fn cleanup_shell_process_group(child: &mut std::process::Child) {
+    #[cfg(target_os = "macos")]
+    {
+        // `process_group(0)` makes the child the leader of a new process
+        // group. A negative PID targets the whole group, including any
+        // descendants that still hold stdout open.
+        let process_group = child.id() as libc::pid_t;
+        if process_group > 0 {
+            unsafe {
+                libc::kill(-process_group, libc::SIGKILL);
+            }
+        }
+    }
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 /// Execute an explicitly configured shell snippet and return stdout.
 /// Commands are resolved with the same placeholders as text snippets.
 pub fn execute_shell(command: &str, clipboard_text: Option<&str>) -> Result<String, Error> {
@@ -128,13 +147,25 @@ pub fn execute_shell(command: &str, clipboard_text: Option<&str>) -> Result<Stri
 
     let deadline = Instant::now() + SHELL_TIMEOUT;
     loop {
-        if let Some(status) = child
-            .try_wait()
-            .map_err(|e| Error::ShellExecution(e.to_string()))?
-        {
-            let (_, bytes) = receiver
-                .recv_timeout(Duration::from_millis(100))
-                .map_err(|_| Error::ShellExecution("failed to read stdout".into()))?;
+        let status = match child.try_wait() {
+            Ok(status) => status,
+            Err(error) => {
+                cleanup_shell_process_group(&mut child);
+                return Err(Error::ShellExecution(error.to_string()));
+            }
+        };
+        if let Some(status) = status {
+            let (read_result, bytes) = match receiver.recv_timeout(Duration::from_millis(100)) {
+                Ok(result) => result,
+                Err(_) => {
+                    cleanup_shell_process_group(&mut child);
+                    return Err(Error::ShellExecution("failed to read stdout".into()));
+                }
+            };
+            if read_result.is_err() {
+                cleanup_shell_process_group(&mut child);
+                return Err(Error::ShellExecution("failed to read stdout".into()));
+            }
             if bytes.len() > MAX_SHELL_OUTPUT {
                 return Err(Error::ShellExecution("stdout exceeds 1 MiB".into()));
             }
@@ -149,20 +180,7 @@ pub fn execute_shell(command: &str, clipboard_text: Option<&str>) -> Result<Stri
         }
 
         if Instant::now() >= deadline {
-            #[cfg(target_os = "macos")]
-            {
-                // `process_group(0)` makes the child the leader of a new
-                // process group. A negative PID targets the whole group,
-                // including descendants spawned by the shell command.
-                let process_group = child.id() as libc::pid_t;
-                if process_group > 0 {
-                    unsafe {
-                        libc::kill(-process_group, libc::SIGKILL);
-                    }
-                }
-            }
-            let _ = child.kill();
-            let _ = child.wait();
+            cleanup_shell_process_group(&mut child);
             return Err(Error::ShellExecution(
                 "command timed out after 3 seconds".into(),
             ));
@@ -473,6 +491,26 @@ mod tests {
 
         // Without process-group cleanup, the descendant would still run and
         // create the marker after the parent zsh has timed out.
+        std::thread::sleep(Duration::from_secs(2));
+        assert!(!marker.exists());
+        let _ = std::fs::remove_file(marker);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_shell_stdout_failure_kills_descendant_processes() {
+        let marker = std::env::temp_dir().join(format!(
+            "ainto-shell-stdout-failure-{}.marker",
+            uuid::Uuid::new_v4()
+        ));
+        let quoted_marker = format!("'{}'", marker.to_string_lossy().replace('\'', "'\"'\"'"));
+        let command = format!("(sleep 1; : > {quoted_marker}) & exit 0");
+
+        let error = execute_shell(&command, None).unwrap_err();
+        assert!(error.to_string().contains("failed to read stdout"));
+
+        // The descendant inherited stdout after the parent shell exited. It
+        // must still be killed when stdout collection fails or times out.
         std::thread::sleep(Duration::from_secs(2));
         assert!(!marker.exists());
         let _ = std::fs::remove_file(marker);

@@ -27,6 +27,7 @@ final class TextExpander {
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    private var workspaceObserver: NSObjectProtocol?
 
     /// Lock protecting all static mutable state accessed from CGEvent tap thread.
     private static let lock = NSLock()
@@ -62,6 +63,17 @@ final class TextExpander {
 
         loadSnippets()
         installEventTap()
+        workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            // A shell replacement belongs to the app that received its
+            // trigger. Activation of another app invalidates that target.
+            Task { @MainActor in
+                Self.cancelPendingShellReplacementForTargetChange()
+            }
+        }
     }
 
     func stop() {
@@ -70,6 +82,10 @@ final class TextExpander {
         }
         if let source = runLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes)
+        }
+        if let workspaceObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver)
+            self.workspaceObserver = nil
         }
         eventTap = nil
         runLoopSource = nil
@@ -125,7 +141,11 @@ final class TextExpander {
     // MARK: - CGEvent Tap
 
     private func installEventTap() {
-        let eventMask: CGEventMask = (1 << CGEventType.keyDown.rawValue)
+        let eventMask: CGEventMask =
+            (1 << CGEventType.keyDown.rawValue) |
+            (1 << CGEventType.leftMouseDown.rawValue) |
+            (1 << CGEventType.rightMouseDown.rawValue) |
+            (1 << CGEventType.otherMouseDown.rawValue)
 
         // The callback must be a C function pointer — use a static method
         let tap = CGEvent.tapCreate(
@@ -161,6 +181,15 @@ final class TextExpander {
             if let tap = sharedEventTap {
                 CGEvent.tapEnable(tap: tap, enable: true)
             }
+            return Unmanaged.passRetained(event)
+        }
+
+        if type == .leftMouseDown || type == .rightMouseDown || type == .otherMouseDown {
+            // Mouse clicks can move the caret without producing a key event,
+            // so they invalidate the target of an in-flight replacement.
+            lock.lock()
+            cancelPendingShellReplacementForTargetChangeLocked()
+            lock.unlock()
             return Unmanaged.passRetained(event)
         }
 
@@ -300,6 +329,22 @@ final class TextExpander {
         pendingShellReplacement = nil
         let restored = pending.bufferPrefix + pending.keyword
         buffer = String(restored.suffix(maxBufferLength))
+    }
+
+    /// Invalidate both the pending replacement and the rolling input context.
+    /// The latter belongs to the previously focused target and must not be
+    /// reused after an app switch or caret movement.
+    private static func cancelPendingShellReplacementForTargetChange() {
+        lock.lock()
+        cancelPendingShellReplacementForTargetChangeLocked()
+        lock.unlock()
+    }
+
+    /// Caller must hold `lock`.
+    private static func cancelPendingShellReplacementForTargetChangeLocked() {
+        pendingShellReplacement = nil
+        buffer = ""
+        lastKeystrokeTime = Date()
     }
 
     /// Check if the buffer ends with any snippet keyword.

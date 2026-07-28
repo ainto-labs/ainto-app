@@ -289,7 +289,13 @@ final class SearchViewModel: ObservableObject {
     @Published var results: [SearchResult] = []
     @Published var selectedIndex: Int = 0
     @Published var shouldSelectAll = false
-    @Published var page: LauncherPage = .main
+    @Published var page: LauncherPage = .main {
+        didSet {
+            if page != oldValue {
+                invalidatePendingShellExecution()
+            }
+        }
+    }
     @Published var searchMode: SearchMode = .apps
 
     // Claude state
@@ -304,6 +310,7 @@ final class SearchViewModel: ObservableObject {
     @Published var snippetFilter: String = ""
     @Published var isEditingSnippet = false
     @Published var editingSnippet: SnippetItem?
+    private var shellExecutionGeneration: UInt64 = 0
 
     // AI master switch (config: ai_enabled). When false, all AI surfaces
     // are hidden from the launcher.
@@ -879,7 +886,19 @@ final class SearchViewModel: ObservableObject {
         executeSnippet(mode: snippet.mode, expansion: snippet.expansion, command: snippet.command)
     }
 
+    /// Invalidate shell work that belongs to an older launcher interaction.
+    /// This is called when the panel is reopened or when navigation changes.
+    func invalidatePendingShellExecution() {
+        shellExecutionGeneration &+= 1
+    }
+
+    private func beginSnippetExecution() -> UInt64 {
+        shellExecutionGeneration &+= 1
+        return shellExecutionGeneration
+    }
+
     private func executeSnippet(mode: String, expansion: String, command: String) {
+        let executionToken = beginSnippetExecution()
         if mode.caseInsensitiveCompare("shell") == .orderedSame {
             guard !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
             let clipboardText = NSPasteboard.general.string(forType: .string)
@@ -888,7 +907,8 @@ final class SearchViewModel: ObservableObject {
                 let expanded = String(cString: cStr)
                 rc_free_string(cStr)
                 DispatchQueue.main.async {
-                    self?.pasteExpandedSnippet(expanded)
+                    guard let self, self.shellExecutionGeneration == executionToken else { return }
+                    self.pasteExpandedSnippet(expanded)
                 }
             }
             return
