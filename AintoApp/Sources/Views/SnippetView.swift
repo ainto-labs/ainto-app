@@ -318,6 +318,7 @@ struct SnippetEditForm: View {
                             Text("Shell").tag("shell")
                         }
                         .pickerStyle(.segmented)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
                     if viewModel.editingSnippet?.mode.caseInsensitiveCompare("shell") == .orderedSame {
