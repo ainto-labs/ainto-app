@@ -13,8 +13,21 @@ import AintoCore
 /// - System Settings → Privacy & Security → Input Monitoring
 @MainActor
 final class TextExpander {
+    private struct SnippetDefinition {
+        let mode: String
+        let expansion: String
+        let command: String
+    }
+
+    private struct PendingShellReplacement {
+        let id: UInt64
+        let keyword: String
+        let bufferPrefix: String
+    }
+
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    private var workspaceObserver: NSObjectProtocol?
 
     /// Lock protecting all static mutable state accessed from CGEvent tap thread.
     private static let lock = NSLock()
@@ -26,10 +39,15 @@ final class TextExpander {
     private static let bufferTimeout: TimeInterval = 10 // clear after 10s inactivity
 
     /// Snippet keyword → expansion mapping.
-    private static var snippetMap: [String: String] = [:]
+    private static var snippetMap: [String: SnippetDefinition] = [:]
 
     /// Trie for efficient keyword matching.
     private static var trie = Trie()
+
+    /// Shell commands run off the event-tap thread. Keep a token so input
+    /// arriving before completion can cancel the stale replacement safely.
+    private static var nextShellReplacementID: UInt64 = 0
+    private static var pendingShellReplacement: PendingShellReplacement?
 
     // MARK: - Public
 
@@ -45,6 +63,17 @@ final class TextExpander {
 
         loadSnippets()
         installEventTap()
+        workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            // A shell replacement belongs to the app that received its
+            // trigger. Activation of another app invalidates that target.
+            Task { @MainActor in
+                Self.cancelPendingShellReplacementForTargetChange()
+            }
+        }
     }
 
     func stop() {
@@ -54,8 +83,15 @@ final class TextExpander {
         if let source = runLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes)
         }
+        if let workspaceObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver)
+            self.workspaceObserver = nil
+        }
         eventTap = nil
         runLoopSource = nil
+        Self.lock.lock()
+        Self.pendingShellReplacement = nil
+        Self.lock.unlock()
     }
 
     /// Reload snippets from disk (call after snippet CRUD).
@@ -90,9 +126,13 @@ final class TextExpander {
         Self.trie = Trie()
 
         for entry in entries {
-            guard let keyword = entry["keyword"] as? String, !keyword.isEmpty,
-                  let expansion = entry["expansion"] as? String else { continue }
-            Self.snippetMap[keyword] = expansion
+            guard let keyword = entry["keyword"] as? String, !keyword.isEmpty else { continue }
+            let definition = SnippetDefinition(
+                mode: entry["mode"] as? String ?? "text",
+                expansion: entry["expansion"] as? String ?? "",
+                command: entry["command"] as? String ?? ""
+            )
+            Self.snippetMap[keyword] = definition
             Self.trie.insert(keyword)
         }
         Self.lock.unlock()
@@ -101,7 +141,11 @@ final class TextExpander {
     // MARK: - CGEvent Tap
 
     private func installEventTap() {
-        let eventMask: CGEventMask = (1 << CGEventType.keyDown.rawValue)
+        let eventMask: CGEventMask =
+            (1 << CGEventType.keyDown.rawValue) |
+            (1 << CGEventType.leftMouseDown.rawValue) |
+            (1 << CGEventType.rightMouseDown.rawValue) |
+            (1 << CGEventType.otherMouseDown.rawValue)
 
         // The callback must be a C function pointer — use a static method
         let tap = CGEvent.tapCreate(
@@ -140,12 +184,24 @@ final class TextExpander {
             return Unmanaged.passRetained(event)
         }
 
+        if type == .leftMouseDown || type == .rightMouseDown || type == .otherMouseDown {
+            // Mouse clicks can move the caret without producing a key event,
+            // so they invalidate the target of an in-flight replacement.
+            lock.lock()
+            cancelPendingShellReplacementForTargetChangeLocked()
+            lock.unlock()
+            return Unmanaged.passRetained(event)
+        }
+
         guard type == .keyDown else {
             return Unmanaged.passRetained(event)
         }
 
         // Skip keystroke capture for password managers and secure input fields
         if SecureInput.isActive {
+            lock.lock()
+            cancelPendingShellReplacementLocked()
+            lock.unlock()
             return Unmanaged.passRetained(event)
         }
 
@@ -153,23 +209,38 @@ final class TextExpander {
         let flags = event.flags
         if flags.contains(.maskCommand) || flags.contains(.maskControl) || flags.contains(.maskAlternate) {
             lock.lock()
+            cancelPendingShellReplacementLocked()
             buffer = ""
             lock.unlock()
             return Unmanaged.passRetained(event)
         }
 
         // Get the character
+        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
         var length = 0
         var chars = [UniChar](repeating: 0, count: 4)
         event.keyboardGetUnicodeString(maxStringLength: 4, actualStringLength: &length, unicodeString: &chars)
 
         guard length > 0 else {
+            // Backspace and other non-printing key events still invalidate a
+            // pending shell replacement, so it cannot delete newer input.
+            lock.lock()
+            cancelPendingShellReplacementLocked()
+            if keyCode == 51, !buffer.isEmpty {
+                buffer.removeLast()
+            }
+            lock.unlock()
             return Unmanaged.passRetained(event)
         }
 
         let char = String(utf16CodeUnits: chars, count: length)
 
         lock.lock()
+
+        // The shell trigger's final key is allowed through to the target app.
+        // If the user continues typing before the command completes, retain
+        // the already-typed keyword and abandon the asynchronous replacement.
+        cancelPendingShellReplacementLocked()
 
         // Check for buffer timeout
         let now = Date()
@@ -179,7 +250,6 @@ final class TextExpander {
         lastKeystrokeTime = now
 
         // Handle backspace
-        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
         if keyCode == 51 { // Backspace
             if !buffer.isEmpty {
                 buffer.removeLast()
@@ -195,14 +265,45 @@ final class TextExpander {
         }
 
         // Check if buffer ends with any snippet keyword
-        if let (keyword, expansion) = findMatch() {
+        if let (keyword, snippet) = findMatch() {
+            let isShell = snippet.mode.caseInsensitiveCompare("shell") == .orderedSame
+            if isShell && snippet.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                // Keep the keyword intact when there is no command to run.
+                // Returning the event avoids consuming any part of the input.
+                lock.unlock()
+                return Unmanaged.passRetained(event)
+            }
+
             // Remove the keyword from the buffer
             buffer = String(buffer.dropLast(keyword.count))
+
+            if isShell {
+                nextShellReplacementID &+= 1
+                let replacementID = nextShellReplacementID
+                pendingShellReplacement = PendingShellReplacement(
+                    id: replacementID,
+                    keyword: keyword,
+                    bufferPrefix: buffer
+                )
+                lock.unlock()
+
+                // Keep the final trigger character in the target app. This
+                // makes cancellation lossless if input changes while zsh runs.
+                DispatchQueue.main.async {
+                    performReplacement(
+                        keyword: keyword,
+                        snippet: snippet,
+                        replacementID: replacementID
+                    )
+                }
+                return Unmanaged.passRetained(event)
+            }
+
             lock.unlock()
 
             // Perform replacement on main thread
             DispatchQueue.main.async {
-                performReplacement(keywordLength: keyword.count, expansion: expansion)
+                performReplacement(keyword: keyword, snippet: snippet, replacementID: nil)
             }
 
             // Suppress the last keystroke (it's part of the keyword)
@@ -213,32 +314,121 @@ final class TextExpander {
         return Unmanaged.passRetained(event)
     }
 
+    /// Cancel a pending shell replacement and restore its trigger context in
+    /// the rolling buffer.
+    private static func cancelPendingShellReplacement(_ id: UInt64? = nil) {
+        lock.lock()
+        defer { lock.unlock() }
+        cancelPendingShellReplacementLocked(id)
+    }
+
+    /// Caller must hold `lock`.
+    private static func cancelPendingShellReplacementLocked(_ id: UInt64? = nil) {
+        guard let pending = pendingShellReplacement else { return }
+        if let id, pending.id != id { return }
+        pendingShellReplacement = nil
+        let restored = pending.bufferPrefix + pending.keyword
+        buffer = String(restored.suffix(maxBufferLength))
+    }
+
+    /// Invalidate both the pending replacement and the rolling input context.
+    /// The latter belongs to the previously focused target and must not be
+    /// reused after an app switch or caret movement.
+    private static func cancelPendingShellReplacementForTargetChange() {
+        lock.lock()
+        cancelPendingShellReplacementForTargetChangeLocked()
+        lock.unlock()
+    }
+
+    /// Caller must hold `lock`.
+    private static func cancelPendingShellReplacementForTargetChangeLocked() {
+        pendingShellReplacement = nil
+        buffer = ""
+        lastKeystrokeTime = Date()
+    }
+
     /// Check if the buffer ends with any snippet keyword.
-    private static func findMatch() -> (keyword: String, expansion: String)? {
+    private static func findMatch() -> (keyword: String, snippet: SnippetDefinition)? {
         // Check from longest possible match to shortest
         let maxLen = min(buffer.count, maxBufferLength)
         for len in stride(from: maxLen, through: 1, by: -1) {
             let suffix = String(buffer.suffix(len))
-            if trie.contains(suffix), let expansion = snippetMap[suffix] {
-                // Resolve placeholders
-                var resolved = expansion
-                let clipboardText = NSPasteboard.general.string(forType: .string)
-                if let cStr = rc_snippet_expand(expansion, clipboardText) {
-                    resolved = String(cString: cStr)
-                    rc_free_string(cStr)
-                }
-                return (suffix, resolved)
+            if trie.contains(suffix), let snippet = snippetMap[suffix] {
+                return (suffix, snippet)
             }
         }
         return nil
     }
 
     /// Delete the keyword characters and type the expansion.
-    private static func performReplacement(keywordLength: Int, expansion: String) {
+    private static func performReplacement(
+        keyword: String,
+        snippet: SnippetDefinition,
+        replacementID: UInt64?
+    ) {
+        if snippet.mode.caseInsensitiveCompare("shell") == .orderedSame {
+            guard let replacementID, hasPendingShellReplacement(replacementID) else { return }
+            guard !snippet.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                cancelPendingShellReplacement(replacementID)
+                return
+            }
+            let clipboardText = NSPasteboard.general.string(forType: .string)
+            DispatchQueue.global(qos: .userInitiated).async {
+                guard let cStr = rc_snippet_execute(snippet.command, clipboardText) else {
+                    DispatchQueue.main.async {
+                        cancelPendingShellReplacement(replacementID)
+                    }
+                    return
+                }
+                let output = String(cString: cStr)
+                rc_free_string(cStr)
+                DispatchQueue.main.async {
+                    guard claimPendingShellReplacement(replacementID) else { return }
+                    replaceKeywordAndPaste(
+                        keywordLength: keyword.count,
+                        text: output,
+                        suppressedTrigger: false
+                    )
+                }
+            }
+            return
+        }
+
+        let clipboardText = NSPasteboard.general.string(forType: .string)
+        var resolved = snippet.expansion
+        if let cStr = rc_snippet_expand(snippet.expansion, clipboardText) {
+            resolved = String(cString: cStr)
+            rc_free_string(cStr)
+        }
+        replaceKeywordAndPaste(keywordLength: keyword.count, text: resolved, suppressedTrigger: true)
+    }
+
+    private static func hasPendingShellReplacement(_ id: UInt64) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return pendingShellReplacement?.id == id
+    }
+
+    private static func claimPendingShellReplacement(_ id: UInt64) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard pendingShellReplacement?.id == id else { return false }
+        pendingShellReplacement = nil
+        return true
+    }
+
+    private static func replaceKeywordAndPaste(
+        keywordLength: Int,
+        text: String,
+        suppressedTrigger: Bool
+    ) {
         let source = CGEventSource(stateID: .combinedSessionState)
 
-        // Step 1: Send backspace to delete the keyword (minus the last char which was suppressed)
-        for _ in 0..<(keywordLength - 1) {
+        // Step 1: Delete the keyword. Text snippets have their final trigger
+        // character suppressed; shell snippets leave it in the target app so
+        // cancellation can preserve all user input.
+        let backspaceCount = keywordLength - (suppressedTrigger ? 1 : 0)
+        for _ in 0..<max(0, backspaceCount) {
             let backDown = CGEvent(keyboardEventSource: source, virtualKey: 51, keyDown: true)
             backDown?.post(tap: .cghidEventTap)
             let backUp = CGEvent(keyboardEventSource: source, virtualKey: 51, keyDown: false)
@@ -253,7 +443,7 @@ final class TextExpander {
         let pasteboard = NSPasteboard.general
         let oldContents = pasteboard.string(forType: .string)
         pasteboard.clearContents()
-        pasteboard.setString(expansion, forType: .string)
+        pasteboard.setString(text, forType: .string)
         pasteboard.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
 
         // Simulate Cmd+V

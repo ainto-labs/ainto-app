@@ -179,9 +179,9 @@ struct SnippetItemRow: View {
                     .font(.system(size: 13))
                     .foregroundColor(isSelected ? .white : .primary)
                     .lineLimit(1)
-                Text(snippet.keyword)
+                Text(snippet.keyword.isEmpty ? "No keyword" : snippet.keyword)
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(isSelected ? .white.opacity(0.7) : .gray)
+                    .foregroundColor(isSelected ? .white.opacity(0.78) : .secondary)
                     .lineLimit(1)
             }
 
@@ -215,7 +215,9 @@ struct SnippetPreview: View {
             VStack(spacing: 0) {
                 // Expansion preview
                 ScrollView {
-                    Text(expandedText)
+                    Text(snippet.mode.caseInsensitiveCompare("shell") == .orderedSame
+                         ? (snippet.command.isEmpty ? "No command configured" : snippet.command)
+                         : expandedText)
                         .font(.system(size: 13, design: .monospaced))
                         .foregroundColor(.primary)
                         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -236,6 +238,7 @@ struct SnippetPreview: View {
 
                     MetadataRow(label: "Name", value: snippet.name)
                     MetadataRow(label: "Keyword", value: snippet.keyword)
+                    MetadataRow(label: "Mode", value: snippet.mode.capitalized)
                     MetadataRow(label: "Characters", value: "\(snippet.expansion.count)")
                 }
                 .padding(12)
@@ -309,6 +312,33 @@ struct SnippetEditForm: View {
                         viewModel.focusFilterField()
                     }
 
+                    FormRow(label: "Mode") {
+                        Picker("Snippet mode", selection: binding(\.mode)) {
+                            Text("Text").tag("text")
+                            Text("Shell").tag("shell")
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    if viewModel.editingSnippet?.mode.caseInsensitiveCompare("shell") == .orderedSame {
+                        FormRow(label: "Command") {
+                            VStack(alignment: .leading, spacing: 8) {
+                                TextEditor(text: binding(\.command))
+                                    .font(.system(size: 13, design: .monospaced))
+                                    .scrollContentBackground(.hidden)
+                                    .padding(8)
+                                    .frame(minHeight: 100)
+                                    .background(Color.primary.opacity(0.06))
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                                Text("Runs /bin/zsh when triggered. Output is pasted after the command succeeds.")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    } else {
+
                     // Snippet (expansion text)
                     FormRow(label: "Snippet") {
                         VStack(alignment: .leading, spacing: 8) {
@@ -324,6 +354,7 @@ struct SnippetEditForm: View {
                                 .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                         }
+                    }
                     }
 
                     // Keyword

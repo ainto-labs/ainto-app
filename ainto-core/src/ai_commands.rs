@@ -39,32 +39,44 @@ fn default_commands() -> Vec<AiCommand> {
         AiCommand {
             name: "Fix Spelling & Grammar".into(),
             icon: Some("text.badge.checkmark".into()),
-            prompt: format!("{SYS}\n\nFix the spelling and grammar of the following text:\n\n{{selection}}"),
+            prompt: format!(
+                "{SYS}\n\nFix the spelling and grammar of the following text:\n\n{{selection}}"
+            ),
         },
         AiCommand {
             name: "Improve Writing".into(),
             icon: Some("text.badge.star".into()),
-            prompt: format!("{SYS}\n\nImprove the writing quality. Make it clearer and more professional:\n\n{{selection}}"),
+            prompt: format!(
+                "{SYS}\n\nImprove the writing quality. Make it clearer and more professional:\n\n{{selection}}"
+            ),
         },
         AiCommand {
             name: "Make Shorter".into(),
             icon: Some("arrow.down.right.and.arrow.up.left".into()),
-            prompt: format!("{SYS}\n\nMake the following text more concise while keeping the meaning:\n\n{{selection}}"),
+            prompt: format!(
+                "{SYS}\n\nMake the following text more concise while keeping the meaning:\n\n{{selection}}"
+            ),
         },
         AiCommand {
             name: "Make Longer".into(),
             icon: Some("arrow.up.left.and.arrow.down.right".into()),
-            prompt: format!("{SYS}\n\nExpand and elaborate on the following text:\n\n{{selection}}"),
+            prompt: format!(
+                "{SYS}\n\nExpand and elaborate on the following text:\n\n{{selection}}"
+            ),
         },
         AiCommand {
             name: "Change Tone to Professional".into(),
             icon: Some("briefcase".into()),
-            prompt: format!("{SYS}\n\nRewrite the following text in a professional tone:\n\n{{selection}}"),
+            prompt: format!(
+                "{SYS}\n\nRewrite the following text in a professional tone:\n\n{{selection}}"
+            ),
         },
         AiCommand {
             name: "Change Tone to Casual".into(),
             icon: Some("face.smiling".into()),
-            prompt: format!("{SYS}\n\nRewrite the following text in a casual, friendly tone:\n\n{{selection}}"),
+            prompt: format!(
+                "{SYS}\n\nRewrite the following text in a casual, friendly tone:\n\n{{selection}}"
+            ),
         },
         AiCommand {
             name: "Translate to English".into(),
@@ -74,7 +86,9 @@ fn default_commands() -> Vec<AiCommand> {
         AiCommand {
             name: "Translate to Traditional Chinese".into(),
             icon: Some("globe.asia.australia".into()),
-            prompt: format!("{SYS}\n\nTranslate the following text to Traditional Chinese (繁體中文):\n\n{{selection}}"),
+            prompt: format!(
+                "{SYS}\n\nTranslate the following text to Traditional Chinese (繁體中文):\n\n{{selection}}"
+            ),
         },
         AiCommand {
             name: "Explain This".into(),

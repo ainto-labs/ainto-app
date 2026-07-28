@@ -274,9 +274,11 @@ struct SnippetItem: Identifiable {
     var name: String
     var keyword: String
     var expansion: String
+    var mode: String
+    var command: String
 
     static func new() -> SnippetItem {
-        SnippetItem(id: UUID().uuidString, name: "", keyword: "", expansion: "")
+        SnippetItem(id: UUID().uuidString, name: "", keyword: "", expansion: "", mode: "text", command: "")
     }
 }
 
@@ -287,7 +289,13 @@ final class SearchViewModel: ObservableObject {
     @Published var results: [SearchResult] = []
     @Published var selectedIndex: Int = 0
     @Published var shouldSelectAll = false
-    @Published var page: LauncherPage = .main
+    @Published var page: LauncherPage = .main {
+        didSet {
+            if page != oldValue {
+                invalidatePendingShellExecution()
+            }
+        }
+    }
     @Published var searchMode: SearchMode = .apps
 
     // Claude state
@@ -302,6 +310,7 @@ final class SearchViewModel: ObservableObject {
     @Published var snippetFilter: String = ""
     @Published var isEditingSnippet = false
     @Published var editingSnippet: SnippetItem?
+    private var shellExecutionGeneration: UInt64 = 0
 
     // AI master switch (config: ai_enabled). When false, all AI surfaces
     // are hidden from the launcher.
@@ -522,16 +531,19 @@ final class SearchViewModel: ObservableObject {
                     }
                     .prefix(5)
                     .map { snippet in
+                        let id = snippet["id"] as? String ?? UUID().uuidString
                         let name = snippet["name"] as? String ?? ""
                         let keyword = snippet["keyword"] as? String ?? ""
                         let expansion = snippet["expansion"] as? String ?? ""
+                        let mode = snippet["mode"] as? String ?? "text"
+                        let command = snippet["command"] as? String ?? ""
                         return SearchResult(
                             title: name,
                             subtitle: "Snippet: \(keyword)",
                             icon: nil,
                             systemIcon: "doc.text.fill"
                         ) { [weak self] in
-                            self?.expandAndPasteSnippet(expansion)
+                            self?.executeSnippet(mode: mode, expansion: expansion, command: command)
                         }
                     }
             }
@@ -801,7 +813,9 @@ final class SearchViewModel: ObservableObject {
                 id: entry["id"] as? String ?? UUID().uuidString,
                 name: entry["name"] as? String ?? "",
                 keyword: entry["keyword"] as? String ?? "",
-                expansion: entry["expansion"] as? String ?? ""
+                expansion: entry["expansion"] as? String ?? "",
+                mode: entry["mode"] as? String ?? "text",
+                command: entry["command"] as? String ?? ""
             )
         }
         snippetSelectedIndex = 0
@@ -809,7 +823,8 @@ final class SearchViewModel: ObservableObject {
 
     func saveSnippets() {
         let jsonArray: [[String: Any]] = snippets.map { s in
-            ["id": s.id, "name": s.name, "keyword": s.keyword, "expansion": s.expansion]
+            ["id": s.id, "name": s.name, "keyword": s.keyword, "expansion": s.expansion,
+             "mode": s.mode, "command": s.command]
         }
         guard let data = try? JSONSerialization.data(withJSONObject: jsonArray),
               let jsonStr = String(data: data, encoding: .utf8) else { return }
@@ -867,16 +882,47 @@ final class SearchViewModel: ObservableObject {
     func expandSelectedSnippet() {
         let items = filteredSnippets
         guard snippetSelectedIndex < items.count else { return }
-        expandAndPasteSnippet(items[snippetSelectedIndex].expansion)
+        let snippet = items[snippetSelectedIndex]
+        executeSnippet(mode: snippet.mode, expansion: snippet.expansion, command: snippet.command)
     }
 
-    /// Expand a snippet's placeholders, put the result on the pasteboard,
-    /// and paste it into the frontmost app.
-    private func expandAndPasteSnippet(_ expansion: String) {
+    /// Invalidate shell work that belongs to an older launcher interaction.
+    /// This is called when the panel is reopened or when navigation changes.
+    func invalidatePendingShellExecution() {
+        shellExecutionGeneration &+= 1
+    }
+
+    private func beginSnippetExecution() -> UInt64 {
+        shellExecutionGeneration &+= 1
+        return shellExecutionGeneration
+    }
+
+    private func executeSnippet(mode: String, expansion: String, command: String) {
+        let executionToken = beginSnippetExecution()
+        if mode.caseInsensitiveCompare("shell") == .orderedSame {
+            guard !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+            let clipboardText = NSPasteboard.general.string(forType: .string)
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                guard let cStr = rc_snippet_execute(command, clipboardText) else { return }
+                let expanded = String(cString: cStr)
+                rc_free_string(cStr)
+                DispatchQueue.main.async {
+                    guard let self, self.shellExecutionGeneration == executionToken else { return }
+                    self.pasteExpandedSnippet(expanded)
+                }
+            }
+            return
+        }
+
         let clipboardText = NSPasteboard.general.string(forType: .string)
-        guard let cStr = rc_snippet_expand(expansion, clipboardText) else { return }
-        let expanded = String(cString: cStr)
-        rc_free_string(cStr)
+        if let cStr = rc_snippet_expand(expansion, clipboardText) {
+            let expanded = String(cString: cStr)
+            rc_free_string(cStr)
+            pasteExpandedSnippet(expanded)
+        }
+    }
+
+    private func pasteExpandedSnippet(_ expanded: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(expanded, forType: .string)
         onPasteAndHide?()

@@ -15,6 +15,8 @@ final class SearchPanel: NSPanel {
     /// Floating action panel window.
     private var actionWindow: NSWindow?
     private var actionSelectedIndex = 0
+    private var isOrderingOut = false
+    private var workspaceObserver: NSObjectProtocol?
 
     init() {
         let mainView = MainView(viewModel: viewModel)
@@ -74,12 +76,30 @@ final class SearchPanel: NSPanel {
         }
 
         viewModel.loadAISettings()
+
+        workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, !self.isVisible else { return }
+                // The panel is hidden while an async shell result is pending.
+                // A subsequent app switch means the original paste target is stale.
+                self.viewModel.invalidatePendingShellExecution()
+            }
+        }
     }
 
     /// Whether the user has ever positioned the panel manually.
     private var hasUserPosition = false
 
     func showPanel() {
+        // A new launcher session must not accept a result from an older shell
+        // snippet execution.
+        viewModel.invalidatePendingShellExecution()
+        isOrderingOut = false
+
         // Remember the currently focused app before showing
         previousApp = NSWorkspace.shared.frontmostApplication
 
@@ -108,8 +128,15 @@ final class SearchPanel: NSPanel {
     }
 
     func hidePanel() {
+        isOrderingOut = true
         hideActionPanel()
         orderOut(nil)
+        // Keep the flag through any synchronous resignKey callback caused by
+        // orderOut, then allow a later user-driven focus loss to invalidate
+        // pending shell work.
+        DispatchQueue.main.async { [weak self] in
+            self?.isOrderingOut = false
+        }
     }
 
     /// Hide panel, re-activate the previous app, and simulate Cmd+V to paste.
@@ -256,6 +283,11 @@ final class SearchPanel: NSPanel {
     // Auto-hide when losing focus
     override func resignKey() {
         super.resignKey()
+        if !isOrderingOut {
+            // Losing focus changes the app/caret that a completed result would
+            // target, so discard work started by the previous panel session.
+            viewModel.invalidatePendingShellExecution()
+        }
         hidePanel()
     }
 
