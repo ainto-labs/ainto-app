@@ -18,6 +18,10 @@ pub struct AppIndex {
 }
 
 impl AppIndex {
+    pub fn apps(&self) -> &[AppEntry] {
+        &self.apps
+    }
+
     pub fn apps_mut(&mut self) -> &mut Vec<AppEntry> {
         &mut self.apps
     }

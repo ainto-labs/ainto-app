@@ -32,6 +32,7 @@ struct SettingsView: View {
         case ai = "AI"
         case snippets = "Snippets"
         case fileSearch = "File Search"
+        case aliases = "Aliases"
         case data = "Data"
         case about = "About"
 
@@ -42,6 +43,7 @@ struct SettingsView: View {
             case .ai: return "sparkle"
             case .snippets: return "text.quote"
             case .fileSearch: return "doc.text.magnifyingglass"
+            case .aliases: return "arrow.triangle.branch"
             case .data: return "folder"
             case .about: return "info.circle"
             }
@@ -76,6 +78,7 @@ struct SettingsView: View {
                     case .ai: aiSection
                     case .snippets: snippetsSection
                     case .fileSearch: fileSearchSection
+                    case .aliases: AliasSettingsView()
                     case .data: dataSection
                     case .about: aboutSection
                     }

@@ -72,6 +72,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.openSettings()
         })
 
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(aliasesDidChange),
+            name: .aliasesDidChange,
+            object: nil
+        )
+
         // Watch ~/.config/ainto/ for external file changes (e.g. manual TOML edits)
         watchConfigDirectory()
     }
@@ -79,7 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Monitor config files for external changes and reload automatically.
     private func watchConfigDirectory() {
         let configDir = NSHomeDirectory() + "/.config/ainto"
-        let files = ["snippets.toml", "ai-commands.toml", "config.toml"]
+        let files = ["snippets.toml", "ai-commands.toml", "aliases.toml", "config.toml"]
 
         for file in files {
             let path = configDir + "/" + file
@@ -97,6 +104,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // Covers both the Settings toggle (saved via rc_config_save)
                     // and manual TOML edits.
                     self?.applySnippetsEnabled()
+                } else if file == "aliases.toml" {
+                    self?.searchPanel?.viewModel.reloadAliases()
                 } else {
                     self?.searchPanel?.viewModel.loadSnippets()
                     self?.searchPanel?.viewModel.loadAICommands()
@@ -107,6 +116,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             source.resume()
             configWatcherSources.append(source)
         }
+    }
+
+    @objc private func aliasesDidChange() {
+        searchPanel?.viewModel.reloadAliases()
     }
 
     func applicationWillTerminate(_ notification: Notification) {

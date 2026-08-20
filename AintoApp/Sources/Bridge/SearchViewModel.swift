@@ -25,7 +25,7 @@ struct AICommand: Identifiable {
 
         return entries.map { entry in
             AICommand(
-                id: entry["name"] as? String ?? UUID().uuidString,
+                id: entry["id"] as? String ?? UUID().uuidString,
                 name: entry["name"] as? String ?? "",
                 icon: entry["icon"] as? String ?? "sparkle",
                 prompt: entry["prompt"] as? String ?? ""
@@ -129,6 +129,11 @@ enum SearchMode: Equatable {
     case claude  // Tab: ask Claude
 }
 
+enum SelectionCaptureResult {
+    case success(String)
+    case failure(String)
+}
+
 /// An action available for a search result.
 struct ActionItem: Identifiable {
     let id = UUID()
@@ -143,10 +148,11 @@ struct ActionItem: Identifiable {
 struct SearchResult: Identifiable {
     let id = UUID()
     let title: String
-    let subtitle: String
+    var subtitle: String
     let icon: NSImage?
     let systemIcon: String? // fallback SF Symbol name
     var score: Int = 0 // higher = better match, used for unified sorting
+    var targetRef: LauncherTargetRef? = nil
     let action: () -> Void
     var actions: [ActionItem] = [] // Cmd+K to show
 
@@ -297,6 +303,7 @@ final class SearchViewModel: ObservableObject {
     @Published var pendingSystemAction: SystemAction?
     @Published var systemActionError: String?
     @Published var isExecutingSystemAction = false
+    var aliases: [LauncherAlias] = []
     var onSystemActionCompleted: (() -> Void)?
 
     // Claude state
@@ -448,6 +455,10 @@ final class SearchViewModel: ObservableObject {
         focusFilterField()
     }
 
+    func reloadAliases() {
+        aliases = AliasStore.load()
+    }
+
     func prepareForPanelHide() {
         guard page == .fileSearch else { return }
         fileSearch.clear()
@@ -520,6 +531,7 @@ final class SearchViewModel: ObservableObject {
                 appResults = entries.prefix(8).map { entry in
                     let name = entry["display_name"] as? String ?? ""
                     let path = entry["path"] as? String ?? ""
+                    let bundleID = entry["bundle_id"] as? String
                     let ranking = entry["ranking"] as? Int ?? 0
                     let icon = self.loadAppIcon(path: path)
                     var result = SearchResult(
@@ -527,7 +539,8 @@ final class SearchViewModel: ObservableObject {
                         subtitle: "Application",
                         icon: icon,
                         systemIcon: "app.fill",
-                        score: fuzzyScore(query, name) + ranking
+                        score: fuzzyScore(query, name) + ranking,
+                        targetRef: Self.appTargetRef(bundleID: bundleID, path: path)
                     ) {
                         NSWorkspace.shared.open(URL(fileURLWithPath: path))
                         rc_update_ranking(path)
@@ -557,11 +570,13 @@ final class SearchViewModel: ObservableObject {
                         let name = snippet["name"] as? String ?? ""
                         let keyword = snippet["keyword"] as? String ?? ""
                         let expansion = snippet["expansion"] as? String ?? ""
+                        let id = snippet["id"] as? String ?? ""
                         return SearchResult(
                             title: name,
                             subtitle: "Snippet: \(keyword)",
                             icon: nil,
-                            systemIcon: "doc.text.fill"
+                            systemIcon: "doc.text.fill",
+                            targetRef: LauncherTargetRef(kind: .snippet, id: id)
                         ) { [weak self] in
                             self?.expandAndPasteSnippet(expansion)
                         }
@@ -579,20 +594,21 @@ final class SearchViewModel: ObservableObject {
             let matchingAICommands = AICommand.loadAll().filter { cmd in
                 fuzzyMatch(q, cmd.name)
             }
-            let rankedAICommands = matchingAICommands.sorted { a, b in
-                self.commandRanking(for: a.name) > self.commandRanking(for: b.name)
+            let rankedAICommands = matchingAICommands.sorted { first, second in
+                self.commandRanking(for: first) > self.commandRanking(for: second)
             }
             for cmd in rankedAICommands.prefix(6) {
                 let command = cmd
-                let cmdScore = fuzzyScore(q, command.name) + self.commandRanking(for: command.name)
+                let cmdScore = fuzzyScore(q, command.name) + self.commandRanking(for: command)
                 var result = SearchResult(
                     title: command.name,
                     subtitle: "AI Command",
                     icon: nil,
                     systemIcon: command.icon,
-                    score: cmdScore
+                    score: cmdScore,
+                    targetRef: LauncherTargetRef(kind: .aiCommand, id: command.id)
                 ) { [weak self] in
-                    self?.incrementCommandRanking(command.name)
+                    self?.incrementCommandRanking(command)
                     self?.executeAICommand(command)
                 }
                 result.actions = aiCommandActions(for: command)
@@ -632,7 +648,8 @@ final class SearchViewModel: ObservableObject {
                 subtitle: "Command",
                 icon: nil,
                 systemIcon: "doc.on.clipboard",
-                score: fuzzyScore(query, "Clipboard History") + commandRanking(for: "Clipboard History")
+                score: fuzzyScore(query, "Clipboard History") + commandRanking(for: "Clipboard History"),
+                targetRef: LauncherTargetRef(kind: .launcherCommand, id: "clipboard-history")
             ) { [weak self] in
                 self?.incrementCommandRanking("Clipboard History")
                 self?.goToClipboard()
@@ -649,6 +666,12 @@ final class SearchViewModel: ObservableObject {
         }
 
         var allResults = appResults + commandResults + snippetResults
+        if let aliasResult = resolvedAliasResult(for: query) {
+            if let target = aliasResult.targetRef {
+                allResults.removeAll { $0.targetRef == target }
+            }
+            allResults.append(aliasResult)
+        }
         allResults.sort { $0.score > $1.score }
         results = Array(allResults.prefix(20))
         selectedIndex = 0
@@ -918,7 +941,7 @@ final class SearchViewModel: ObservableObject {
 
     /// Expand a snippet's placeholders, put the result on the pasteboard,
     /// and paste it into the frontmost app.
-    private func expandAndPasteSnippet(_ expansion: String) {
+    func expandAndPasteSnippet(_ expansion: String) {
         let clipboardText = NSPasteboard.general.string(forType: .string)
         guard let cStr = rc_snippet_expand(expansion, clipboardText) else { return }
         let expanded = String(cString: cStr)
@@ -946,6 +969,7 @@ final class SearchViewModel: ObservableObject {
               let config = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
         aiEnabled = config["ai_enabled"] as? Bool ?? true
         claudeBinary = (config["claude_binary"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "claude"
+        reloadAliases()
         fileSearch.reloadConfiguration()
         exitAISurfacesIfDisabled()
     }
@@ -968,7 +992,7 @@ final class SearchViewModel: ObservableObject {
 
     func saveAICommands() {
         let jsonArray: [[String: Any]] = aiCommands.map { cmd in
-            ["name": cmd.name, "icon": cmd.icon, "prompt": cmd.prompt]
+            ["id": cmd.id, "name": cmd.name, "icon": cmd.icon, "prompt": cmd.prompt]
         }
         guard let data = try? JSONSerialization.data(withJSONObject: jsonArray),
               let jsonStr = String(data: data, encoding: .utf8) else { return }
@@ -1000,10 +1024,6 @@ final class SearchViewModel: ObservableObject {
         } else {
             aiCommands.append(editing)
         }
-        // Update id to match name (used as stable identifier)
-        if let idx = aiCommands.firstIndex(where: { $0.id == editing.id }) {
-            aiCommands[idx].id = editing.name
-        }
         saveAICommands()
         isEditingAICommand = false
         editingAICommand = nil
@@ -1024,7 +1044,7 @@ final class SearchViewModel: ObservableObject {
         }
     }
 
-    private func aiCommandActions(for command: AICommand) -> [ActionItem] {
+    func aiCommandActions(for command: AICommand) -> [ActionItem] {
         [
             ActionItem(title: "Edit", icon: "pencil", shortcut: nil, keepPanel: true) { [weak self] in
                 self?.goToAICommands()
@@ -1129,12 +1149,14 @@ final class SearchViewModel: ObservableObject {
                 for entry in entries {
                     let name = entry["display_name"] as? String ?? ""
                     let path = entry["path"] as? String ?? ""
+                    let bundleID = entry["bundle_id"] as? String
                     let icon = self.loadAppIcon(path: path)
                     var result = SearchResult(
                         title: name,
                         subtitle: "Application",
                         icon: icon,
-                        systemIcon: "app.fill"
+                        systemIcon: "app.fill",
+                        targetRef: Self.appTargetRef(bundleID: bundleID, path: path)
                     ) {
                         NSWorkspace.shared.open(URL(fileURLWithPath: path))
                         rc_update_ranking(path)
@@ -1150,7 +1172,8 @@ final class SearchViewModel: ObservableObject {
             title: "Clipboard History",
             subtitle: "Command",
             icon: nil,
-            systemIcon: "doc.on.clipboard"
+            systemIcon: "doc.on.clipboard",
+            targetRef: LauncherTargetRef(kind: .launcherCommand, id: "clipboard-history")
         ) { [weak self] in self?.goToClipboard() })
 
         results.append(fileSearchCommandResult(score: 0))
@@ -1173,8 +1196,8 @@ final class SearchViewModel: ObservableObject {
 
             // AI Commands — sorted by usage, top 4
             let aiCommands = AICommand.loadAll()
-            let sorted = aiCommands.sorted { a, b in
-                commandRanking(for: a.name) > commandRanking(for: b.name)
+            let sorted = aiCommands.sorted { first, second in
+                commandRanking(for: first) > commandRanking(for: second)
             }
             for cmd in sorted.prefix(4) {
                 let command = cmd
@@ -1182,9 +1205,10 @@ final class SearchViewModel: ObservableObject {
                     title: command.name,
                     subtitle: "AI Command",
                     icon: nil,
-                    systemIcon: command.icon
+                    systemIcon: command.icon,
+                    targetRef: LauncherTargetRef(kind: .aiCommand, id: command.id)
                 ) { [weak self] in
-                    self?.incrementCommandRanking(command.name)
+                    self?.incrementCommandRanking(command)
                     self?.executeAICommand(command)
                 }
                 result.actions = aiCommandActions(for: command)
@@ -1198,12 +1222,23 @@ final class SearchViewModel: ObservableObject {
     // MARK: - AI Commands
 
     /// Callback to grab selection from previous app (set by SearchPanel)
-    var onGrabSelection: ((@escaping (String) -> Void) -> Void)?
+    var onGrabSelection: ((@MainActor @escaping (SelectionCaptureResult) -> Void) -> Void)?
 
     func executeAICommand(_ command: AICommand) {
         // Ask the panel to hide, grab selection from previous app, then proceed
-        onGrabSelection? { [weak self] selectedText in
+        onGrabSelection? { [weak self] result in
             guard let self else { return }
+
+            let selectedText: String
+            switch result {
+            case .success(let text):
+                selectedText = text
+            case .failure(let message):
+                self.searchMode = .claude
+                self.claudeMessages.append(ClaudeMessage(role: .assistant, text: message))
+                self.page = .claude
+                return
+            }
 
             guard !selectedText.isEmpty else {
                 self.searchMode = .claude
@@ -1356,9 +1391,17 @@ final class SearchViewModel: ObservableObject {
         let _ = rc_increment_ranking(key)
     }
 
+    func incrementCommandRanking(_ command: AICommand) {
+        let _ = rc_increment_ranking("cmd-id:\(command.id)")
+    }
+
     func commandRanking(for name: String) -> Int {
         let key = "cmd:\(name)"
         return Int(rc_get_ranking(key))
+    }
+
+    func commandRanking(for command: AICommand) -> Int {
+        max(Int(rc_get_ranking("cmd-id:\(command.id)")), commandRanking(for: command.name))
     }
 
     // MARK: - Focus
@@ -1371,7 +1414,11 @@ final class SearchViewModel: ObservableObject {
         func tryFocus(attempts: Int) {
             guard attempts > 0 else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                if let window = NSApp.keyWindow,
+                // Alias fields in Settings can remain the key window. Always
+                // focus the visible launcher panel instead of NSApp.keyWindow.
+                if let window = NSApp.windows
+                    .compactMap({ $0 as? SearchPanel })
+                    .first(where: { $0.isVisible }),
                    let textField = Self.findTextField(in: window.contentView) {
                     window.makeFirstResponder(textField)
                     completion?()
@@ -1398,7 +1445,7 @@ final class SearchViewModel: ObservableObject {
 
     // MARK: - Private
 
-    private func loadAppIcon(path: String) -> NSImage? {
+    func loadAppIcon(path: String) -> NSImage? {
         if let cached = iconCache[path] {
             return cached
         }

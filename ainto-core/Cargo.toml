@@ -28,8 +28,12 @@ dirs = "6"
 # Error handling
 thiserror = "2"
 
-# UUID for snippet IDs
+# UUID for snippet and AI command IDs
 uuid = { version = "1", features = ["v4"] }
+
+# Unicode-stable, case-insensitive alias matching
+unicode-normalization = "0.1"
+unicode-casefold = "0.2"
 
 # macOS frameworks (for app discovery)
 [target.'cfg(target_os = "macos")'.dependencies]

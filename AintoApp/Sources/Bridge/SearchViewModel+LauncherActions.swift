@@ -8,7 +8,8 @@ extension SearchViewModel {
             subtitle: "Search files and folders with Spotlight",
             icon: nil,
             systemIcon: "doc.text.magnifyingglass",
-            score: score
+            score: score,
+            targetRef: LauncherTargetRef(kind: .launcherCommand, id: "file-search")
         ) { [weak self] in
             self?.goToFileSearch()
         }
@@ -20,7 +21,8 @@ extension SearchViewModel {
             subtitle: action.requiresConfirmation ? "System Action • Confirmation required" : "System Action",
             icon: nil,
             systemIcon: action.icon,
-            score: score
+            score: score,
+            targetRef: LauncherTargetRef(kind: .systemAction, id: action.id)
         ) { [weak self] in
             self?.requestSystemAction(action)
         }

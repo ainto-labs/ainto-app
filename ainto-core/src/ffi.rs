@@ -8,7 +8,7 @@ use std::os::raw::c_char;
 use std::ptr;
 use std::sync::Mutex;
 
-use crate::{clipboard_store, config, discovery, search, snippets};
+use crate::{aliases, clipboard_store, config, discovery, search, snippets};
 
 // ============================================================
 // Global State
@@ -91,6 +91,7 @@ pub extern "C" fn rc_discover_apps(store_icons: bool) -> *const c_char {
                 "display_name": a.display_name,
                 "search_name": a.search_name,
                 "path": a.path,
+                "bundle_id": a.bundle_id,
                 "has_icon": a.icon_png.is_some(),
                 "ranking": a.ranking,
                 "is_favourite": a.is_favourite,
@@ -132,6 +133,7 @@ pub extern "C" fn rc_search_apps(query: *const c_char) -> *const c_char {
                     serde_json::json!({
                         "display_name": a.display_name,
                         "path": a.path,
+                        "bundle_id": a.bundle_id,
                         "ranking": a.ranking,
                         "is_favourite": a.is_favourite,
                     })
@@ -142,6 +144,29 @@ pub extern "C" fn rc_search_apps(query: *const c_char) -> *const c_char {
 
     let json = serde_json::to_string(&results).unwrap_or_else(|_| "[]".to_string());
     to_c_string(&json)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rc_get_all_apps() -> *const c_char {
+    let guard = APP_INDEX.lock().ok();
+    let results = guard
+        .as_ref()
+        .and_then(|opt| opt.as_ref())
+        .map(|idx| {
+            idx.apps()
+                .iter()
+                .map(|app| {
+                    serde_json::json!({
+                        "display_name": app.display_name,
+                        "path": app.path,
+                        "bundle_id": app.bundle_id,
+                        "ranking": app.ranking,
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    to_c_string(&serde_json::to_string(&results).unwrap_or_else(|_| "[]".into()))
 }
 
 #[unsafe(no_mangle)]
@@ -157,6 +182,7 @@ pub extern "C" fn rc_get_top_apps(limit: u64) -> *const c_char {
                     serde_json::json!({
                         "display_name": a.display_name,
                         "path": a.path,
+                        "bundle_id": a.bundle_id,
                         "ranking": a.ranking,
                     })
                 })
@@ -178,7 +204,7 @@ pub extern "C" fn rc_increment_ranking(key: *const c_char) -> i32 {
     let score = crate::ranking::increment_and_save(&path, &k);
 
     // Also update in-memory AppIndex if it's an app path
-    if !k.starts_with("cmd:") {
+    if !k.starts_with("cmd:") && !k.starts_with("cmd-id:") {
         if let Ok(mut idx) = APP_INDEX.lock() {
             if let Some(ref mut index) = *idx {
                 index.update_ranking(&k);
@@ -284,8 +310,10 @@ pub extern "C" fn rc_clipboard_insert_text(
         .unwrap_or(-1)
 }
 
+/// # Safety
+/// `png_data` must point to at least `png_len` readable bytes for this call.
 #[unsafe(no_mangle)]
-pub extern "C" fn rc_clipboard_insert_image(
+pub unsafe extern "C" fn rc_clipboard_insert_image(
     png_data: *const u8,
     png_len: u64,
     width: u32,
@@ -493,6 +521,37 @@ pub extern "C" fn rc_snippet_expand(
     let clip = from_c_str(clipboard_text);
     let result = snippets::resolve_placeholders(&text, clip.as_deref());
     to_c_string(&result)
+}
+
+// ============================================================
+// Global Aliases
+// ============================================================
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rc_aliases_load() -> *const c_char {
+    let path = config::config_dir()
+        .map(|directory| directory.join("aliases.toml"))
+        .unwrap_or_default();
+    let entries = aliases::load_aliases(&path).unwrap_or_default();
+    to_c_string(&serde_json::to_string(&entries).unwrap_or_else(|_| "[]".into()))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rc_aliases_save(json: *const c_char) -> i32 {
+    let Some(json_str) = from_c_str(json) else {
+        return -1;
+    };
+    let Ok(entries) = serde_json::from_str::<Vec<aliases::AliasEntry>>(&json_str) else {
+        return -1;
+    };
+    let path = match config::config_dir() {
+        Ok(directory) => directory.join("aliases.toml"),
+        Err(_) => return -1,
+    };
+    match aliases::save_aliases(&path, &entries) {
+        Ok(()) => 0,
+        Err(_) => -1,
+    }
 }
 
 // ============================================================
