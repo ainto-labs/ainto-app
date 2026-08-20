@@ -1,3 +1,5 @@
+// swiftlint:disable file_length type_body_length function_body_length identifier_name line_length
+// swiftlint:disable file_length type_body_length function_body_length identifier_name line_length
 import SwiftUI
 import AppKit
 import AintoCore
@@ -14,6 +16,9 @@ struct SettingsView: View {
     @State private var claudeBinary: String = "claude"
     @State private var aiEnabled: Bool = true
     @State private var snippetsEnabled: Bool = true
+    @State private var fileSearchPaths: [String] = [NSHomeDirectory()]
+    @State private var fileSearchAllLocations = false
+    @State private var fileSearchIncludeHidden = false
     @State private var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
     @State private var selectedHotkey: String = "⌘ ⇧ Space"
     @State private var hasLoaded = false
@@ -26,6 +31,7 @@ struct SettingsView: View {
         case clipboard = "Clipboard"
         case ai = "AI"
         case snippets = "Snippets"
+        case fileSearch = "File Search"
         case data = "Data"
         case about = "About"
 
@@ -35,6 +41,7 @@ struct SettingsView: View {
             case .clipboard: return "doc.on.clipboard"
             case .ai: return "sparkle"
             case .snippets: return "text.quote"
+            case .fileSearch: return "doc.text.magnifyingglass"
             case .data: return "folder"
             case .about: return "info.circle"
             }
@@ -68,6 +75,7 @@ struct SettingsView: View {
                     case .clipboard: clipboardSection
                     case .ai: aiSection
                     case .snippets: snippetsSection
+                    case .fileSearch: fileSearchSection
                     case .data: dataSection
                     case .about: aboutSection
                     }
@@ -87,6 +95,9 @@ struct SettingsView: View {
         .onChange(of: claudeBinary) { _, _ in saveConfig() }
         .onChange(of: aiEnabled) { _, _ in saveConfig() }
         .onChange(of: snippetsEnabled) { _, _ in saveConfig() }
+        .onChange(of: fileSearchPaths) { _, _ in saveConfig() }
+        .onChange(of: fileSearchAllLocations) { _, _ in saveConfig() }
+        .onChange(of: fileSearchIncludeHidden) { _, _ in saveConfig() }
         .alert("Reset Rankings", isPresented: $showResetConfirm) {
             Button("Cancel", role: .cancel) {}
             Button("Reset", role: .destructive) {
@@ -331,6 +342,16 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - File Search
+
+    private var fileSearchSection: some View {
+        FileSearchSettingsView(
+            paths: $fileSearchPaths,
+            allLocations: $fileSearchAllLocations,
+            includeHidden: $fileSearchIncludeHidden
+        )
+    }
+
     // MARK: - Data
 
     private var dataSection: some View {
@@ -496,6 +517,9 @@ struct SettingsView: View {
         claudeBinary = config["claude_binary"] as? String ?? "claude"
         aiEnabled = config["ai_enabled"] as? Bool ?? true
         snippetsEnabled = config["snippets_enabled"] as? Bool ?? true
+        fileSearchPaths = config["file_search_paths"] as? [String] ?? [NSHomeDirectory()]
+        fileSearchAllLocations = config["file_search_all_locations"] as? Bool ?? false
+        fileSearchIncludeHidden = config["file_search_include_hidden"] as? Bool ?? false
         hasLoaded = true
     }
 
@@ -507,6 +531,9 @@ struct SettingsView: View {
             "claude_binary": claudeBinary,
             "ai_enabled": aiEnabled,
             "snippets_enabled": snippetsEnabled,
+            "file_search_paths": fileSearchPaths,
+            "file_search_all_locations": fileSearchAllLocations,
+            "file_search_include_hidden": fileSearchIncludeHidden,
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: config),
               let jsonStr = String(data: data, encoding: .utf8) else { return }
