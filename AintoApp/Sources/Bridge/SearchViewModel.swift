@@ -14,13 +14,15 @@ struct AICommand: Identifiable {
     }
 
     /// Load all commands from TOML (includes defaults on first run).
-    static func loadAll() -> [AICommand] {
-        guard let cStr = rc_ai_commands_load() else { return [] }
+    /// Returns nil when the file exists but could not be read — callers must
+    /// not persist over a file they failed to load.
+    static func loadAll() -> [AICommand]? {
+        guard let cStr = rc_ai_commands_load() else { return nil }
         let jsonStr = String(cString: cStr)
         rc_free_string(cStr)
 
         guard let data = jsonStr.data(using: .utf8),
-              let entries = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }
+              let entries = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return nil }
 
         return entries.map { entry in
             AICommand(
@@ -296,7 +298,11 @@ final class SearchViewModel: ObservableObject {
     private var claudeSession: UnsafeMutableRawPointer?
     private var claudeSessionId: String?
 
-    // Snippet state
+    // Snippet state.
+    // `snippetsLoaded` stays false until the file has been read successfully;
+    // it guards saving so an unreadable file is never overwritten with an
+    // empty list. Same pattern as `hasLoaded` in SettingsView.
+    private var snippetsLoaded = false
     @Published var snippets: [SnippetItem] = []
     @Published var snippetSelectedIndex: Int = 0
     @Published var snippetFilter: String = ""
@@ -311,6 +317,7 @@ final class SearchViewModel: ObservableObject {
     var claudeBinary: String = "claude"
 
     // AI Commands state
+    private var aiCommandsLoaded = false
     @Published var aiCommands: [AICommand] = []
     @Published var aiCommandSelectedIndex: Int = 0
     @Published var aiCommandFilter: String = ""
@@ -790,10 +797,13 @@ final class SearchViewModel: ObservableObject {
                 expansion: entry["expansion"] as? String ?? ""
             )
         }
+        snippetsLoaded = true
         snippetSelectedIndex = 0
     }
 
     func saveSnippets() {
+        // Never write over a file we could not read.
+        guard snippetsLoaded else { return }
         let jsonArray: [[String: Any]] = snippets.map { s in
             ["id": s.id, "name": s.name, "keyword": s.keyword, "expansion": s.expansion]
         }
@@ -871,7 +881,9 @@ final class SearchViewModel: ObservableObject {
     // MARK: - AI Commands
 
     func loadAICommands() {
-        aiCommands = AICommand.loadAll()
+        guard let loaded = AICommand.loadAll() else { return }
+        aiCommands = loaded
+        aiCommandsLoaded = true
         aiCommandSelectedIndex = 0
     }
 
@@ -906,6 +918,8 @@ final class SearchViewModel: ObservableObject {
     }
 
     func saveAICommands() {
+        // Never write over a file we could not read.
+        guard aiCommandsLoaded else { return }
         let jsonArray: [[String: Any]] = aiCommands.map { cmd in
             ["name": cmd.name, "icon": cmd.icon, "prompt": cmd.prompt]
         }

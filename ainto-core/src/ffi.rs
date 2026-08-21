@@ -47,6 +47,9 @@ pub extern "C" fn rc_free_string(s: *const c_char) {
 // Config
 // ============================================================
 
+/// Returns null when the config file exists but could not be read or parsed.
+/// Callers must treat null as "unknown" and fall back to their own defaults —
+/// never as "empty config", or saving would overwrite a file we failed to read.
 #[unsafe(no_mangle)]
 pub extern "C" fn rc_config_load() -> *const c_char {
     match config::Config::load() {
@@ -54,10 +57,7 @@ pub extern "C" fn rc_config_load() -> *const c_char {
             let json = serde_json::to_string(&cfg).unwrap_or_default();
             to_c_string(&json)
         }
-        Err(_) => {
-            let json = serde_json::to_string(&config::Config::default()).unwrap_or_default();
-            to_c_string(&json)
-        }
+        Err(_) => ptr::null(),
     }
 }
 
@@ -454,12 +454,16 @@ pub extern "C" fn rc_clipboard_clear() -> i32 {
 // Snippets
 // ============================================================
 
+/// Returns null when snippets.toml exists but could not be read or parsed.
+/// A missing file is not an error — it yields an empty list.
 #[unsafe(no_mangle)]
 pub extern "C" fn rc_snippets_load() -> *const c_char {
     let path = config::config_dir()
         .map(|d| d.join("snippets.toml"))
         .unwrap_or_default();
-    let snips = snippets::load_snippets(&path).unwrap_or_default();
+    let Ok(snips) = snippets::load_snippets(&path) else {
+        return ptr::null();
+    };
     let json = serde_json::to_string(&snips).unwrap_or_else(|_| "[]".to_string());
     to_c_string(&json)
 }
@@ -499,12 +503,16 @@ pub extern "C" fn rc_snippet_expand(
 // AI Commands
 // ============================================================
 
+/// Returns null when ai-commands.toml exists but could not be read or parsed.
+/// A missing file is not an error — it is seeded with the built-in defaults.
 #[unsafe(no_mangle)]
 pub extern "C" fn rc_ai_commands_load() -> *const c_char {
     let path = config::config_dir()
         .map(|d| d.join("ai-commands.toml"))
         .unwrap_or_default();
-    let cmds = crate::ai_commands::load_commands(&path).unwrap_or_default();
+    let Ok(cmds) = crate::ai_commands::load_commands(&path) else {
+        return ptr::null();
+    };
     let json = serde_json::to_string(&cmds).unwrap_or_else(|_| "[]".to_string());
     to_c_string(&json)
 }

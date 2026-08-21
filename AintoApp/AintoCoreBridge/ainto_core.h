@@ -11,7 +11,9 @@
 // Config
 // ============================================================
 
-/// Load config, returns JSON string (caller must free with rc_free_string)
+/// Load config, returns JSON string (caller must free with rc_free_string).
+/// Returns NULL if the file exists but could not be read/parsed — do not treat
+/// NULL as an empty config, or a later save will overwrite it.
 const char* rc_config_load(void);
 
 /// Save config from JSON string, returns 0 on success
@@ -87,7 +89,8 @@ int32_t rc_clipboard_clear(void);
 // Snippets
 // ============================================================
 
-/// Load snippets, returns JSON array string
+/// Load snippets, returns JSON array string.
+/// Returns NULL if the file exists but could not be read/parsed.
 const char* rc_snippets_load(void);
 
 /// Save snippets from JSON array string
@@ -101,7 +104,8 @@ const char* rc_snippet_expand(const char* expansion_text, const char* clipboard_
 // AI Commands
 // ============================================================
 
-/// Load custom AI commands, returns JSON array string
+/// Load custom AI commands, returns JSON array string.
+/// Returns NULL if the file exists but could not be read/parsed.
 const char* rc_ai_commands_load(void);
 
 /// Save custom AI commands from JSON array string
