@@ -284,8 +284,13 @@ pub extern "C" fn rc_clipboard_insert_text(
         .unwrap_or(-1)
 }
 
+/// # Safety
+/// `png_data` must point to at least `png_len` readable bytes.
+///
+/// (The other entry points here are equally unsafe, but read their pointers
+/// through `from_c_str`, so clippy's heuristic does not flag them.)
 #[unsafe(no_mangle)]
-pub extern "C" fn rc_clipboard_insert_image(
+pub unsafe extern "C" fn rc_clipboard_insert_image(
     png_data: *const u8,
     png_len: u64,
     width: u32,

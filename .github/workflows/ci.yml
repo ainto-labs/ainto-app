@@ -22,6 +22,13 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          components: clippy
+
+      - name: Lint Rust core
+        run: cd ainto-core && cargo clippy --all-targets -- -D warnings
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '14.0'
 
       - name: Build Rust core
         run: cd ainto-core && cargo build --release

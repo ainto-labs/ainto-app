@@ -130,7 +130,7 @@ impl ClaudeSession {
         // Read all stderr
         let stderr_text = if let Some(stderr) = self.child.stderr.take() {
             let reader = BufReader::new(stderr);
-            reader.lines().filter_map(|l| l.ok()).collect::<Vec<_>>().join("\n")
+            reader.lines().map_while(Result::ok).collect::<Vec<_>>().join("\n")
         } else {
             String::new()
         };
