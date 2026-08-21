@@ -75,9 +75,14 @@ final class ClipboardMonitor {
 
         var didInsert = false
 
-        // Try file URL (Finder copy)
-        if let urls = pasteboard.readObjects(forClasses: [NSURL.self]) as? [URL], !urls.isEmpty {
-            for url in urls where url.isFileURL {
+        // Try file URL (Finder copy). Copying a link from a browser also puts a
+        // `public.url` on the pasteboard, so match on file URLs specifically —
+        // otherwise a copied web link inserts nothing yet still short-circuits
+        // the text branch below, and never reaches the history.
+        let fileURLs = (pasteboard.readObjects(forClasses: [NSURL.self]) as? [URL])?
+            .filter(\.isFileURL) ?? []
+        if !fileURLs.isEmpty {
+            for url in fileURLs {
                 let _ = rc_clipboard_insert_file(url.path, sourceApp)
             }
             didInsert = true
