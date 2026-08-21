@@ -13,6 +13,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindow: NSWindow?
     /// Live config-file watchers, keyed by file name.
     private var configWatchers: [String: DispatchSourceFileSystemObject] = [:]
+    /// Watches for files that are created after launch without polling.
+    private var configDirectoryWatcher: DispatchSourceFileSystemObject?
 
     private var updaterController: SPUStandardUpdaterController?
 
@@ -78,17 +80,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private static let watchedConfigFiles = ["snippets.toml", "ai-commands.toml", "config.toml"]
 
-    /// Delay before re-opening a config file that is missing or was replaced.
-    /// An atomic save briefly leaves no file at the path, so retry rather than
-    /// give up on the first failure.
-    private static let configWatchRearmDelay: TimeInterval = 1.0
-
     private var configDirectory: String { NSHomeDirectory() + "/.config/ainto" }
 
-    /// Monitor config files for external changes and reload automatically.
+    /// Monitor the directory so files missing at launch can be watched as soon
+    /// as they are created, without waking the app on a polling timer.
     private func watchConfigDirectory() {
-        for file in Self.watchedConfigFiles {
-            watchConfigFile(named: file)
+        guard configDirectoryWatcher == nil else { return }
+        try? FileManager.default.createDirectory(
+            atPath: configDirectory,
+            withIntermediateDirectories: true
+        )
+        let fileDescriptor = open(configDirectory, O_EVTONLY)
+        guard fileDescriptor >= 0 else { return }
+
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fileDescriptor,
+            eventMask: [.write, .rename, .delete],
+            queue: .main
+        )
+        source.setEventHandler { [weak self] in
+            guard let self, let activeSource = self.configDirectoryWatcher else { return }
+            let events = activeSource.data
+            if events.contains(.rename) || events.contains(.delete) {
+                activeSource.cancel()
+                self.configDirectoryWatcher = nil
+                self.configWatchers.values.forEach { $0.cancel() }
+                self.configWatchers.removeAll()
+                self.watchConfigDirectory()
+                return
+            }
+            for name in Self.watchedConfigFiles where self.configWatchers[name] == nil {
+                self.watchConfigFile(named: name, reloadAfterOpening: true)
+            }
+        }
+        source.setCancelHandler { close(fileDescriptor) }
+        configDirectoryWatcher = source
+        source.resume()
+
+        for name in Self.watchedConfigFiles {
+            watchConfigFile(named: name, reloadAfterOpening: false)
         }
     }
 
@@ -100,37 +130,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// inode out — so after a rename or delete the old watcher is live but deaf,
     /// and the path has to be re-opened. The same retry covers a file that does
     /// not exist yet at launch (snippets.toml is only created on first save).
-    private func watchConfigFile(named name: String) {
-        let fd = open(configDirectory + "/" + name, O_EVTONLY)
-        guard fd >= 0 else {
-            scheduleConfigWatchRearm(named: name)
-            return
-        }
+    private func watchConfigFile(named name: String, reloadAfterOpening: Bool) {
+        guard configWatchers[name] == nil else { return }
+        let fileDescriptor = open(configDirectory + "/" + name, O_EVTONLY)
+        guard fileDescriptor >= 0 else { return }
 
         let source = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: fd,
+            fileDescriptor: fileDescriptor,
             eventMask: [.write, .rename, .delete],
             queue: .main
         )
         source.setEventHandler { [weak self] in
-            guard let self, let source = self.configWatchers[name] else { return }
-            let events = source.data
+            guard let self, let activeSource = self.configWatchers[name] else { return }
+            let events = activeSource.data
             self.reloadConfigFile(named: name)
             if events.contains(.rename) || events.contains(.delete) {
-                source.cancel()
+                activeSource.cancel()
                 self.configWatchers[name] = nil
-                self.scheduleConfigWatchRearm(named: name)
+                // Atomic saves normally leave the replacement at the path by
+                // the next main-queue turn. If it is still missing, the
+                // directory watcher will install a watcher when it is created.
+                DispatchQueue.main.async { [weak self] in
+                    self?.watchConfigFile(named: name, reloadAfterOpening: true)
+                }
             }
         }
-        source.setCancelHandler { close(fd) }
+        source.setCancelHandler { close(fileDescriptor) }
         configWatchers[name] = source
         source.resume()
-    }
-
-    private func scheduleConfigWatchRearm(named name: String) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.configWatchRearmDelay) { [weak self] in
-            guard let self, self.configWatchers[name] == nil else { return }
-            self.watchConfigFile(named: name)
+        if reloadAfterOpening {
+            reloadConfigFile(named: name)
         }
     }
 
@@ -151,6 +180,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         textExpander?.stop()
         configWatchers.values.forEach { $0.cancel() }
         configWatchers.removeAll()
+        configDirectoryWatcher?.cancel()
+        configDirectoryWatcher = nil
     }
 
     private func toggleSearchPanel() {
