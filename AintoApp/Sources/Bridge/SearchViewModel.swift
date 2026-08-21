@@ -782,6 +782,10 @@ final class SearchViewModel: ObservableObject {
     // MARK: - Snippets
 
     func loadSnippets() {
+        // A later reload can fail after an earlier one succeeded. Close the
+        // save gate before every attempt so stale in-memory data can never
+        // overwrite a file that is currently unreadable.
+        snippetsLoaded = false
         guard let cStr = rc_snippets_load() else { return }
         let jsonStr = String(cString: cStr)
         rc_free_string(cStr)
@@ -881,6 +885,9 @@ final class SearchViewModel: ObservableObject {
     // MARK: - AI Commands
 
     func loadAICommands() {
+        // Keep saves disabled unless this exact reload succeeded. Otherwise an
+        // external malformed edit could be replaced by stale in-memory data.
+        aiCommandsLoaded = false
         guard let loaded = AICommand.loadAll() else { return }
         aiCommands = loaded
         aiCommandsLoaded = true
