@@ -17,6 +17,10 @@ struct MainView: View {
                 SnippetView(viewModel: viewModel)
             case .aiCommands:
                 AICommandView(viewModel: viewModel)
+            case .fileSearch:
+                FileSearchView(viewModel: viewModel, service: viewModel.fileSearch)
+            case .systemConfirmation:
+                SystemActionConfirmationView(viewModel: viewModel)
             case .claude:
                 ClaudeView(viewModel: viewModel)
             }

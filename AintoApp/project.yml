@@ -63,6 +63,8 @@ targets:
       - sdk: Security.framework
       - sdk: SystemConfiguration.framework
       - sdk: ServiceManagement.framework
+      - sdk: QuickLookUI.framework
+      - sdk: UniformTypeIdentifiers.framework
     settings:
       base:
         GENERATE_INFOPLIST_FILE: NO

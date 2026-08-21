@@ -34,6 +34,8 @@
     <string></string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Ainto uses macOS automation to perform the system actions you explicitly run.</string>
 
     <!-- Sparkle Auto-Update Configuration -->
     <key>SUFeedURL</key>

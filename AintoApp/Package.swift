@@ -35,7 +35,14 @@ let package = Package(
                 .linkedFramework("AppKit"),
                 .linkedFramework("Security"),
                 .linkedFramework("SystemConfiguration"),
+                .linkedFramework("QuickLookUI"),
+                .linkedFramework("UniformTypeIdentifiers"),
             ]
+        ),
+        .testTarget(
+            name: "AintoAppTests",
+            dependencies: ["AintoApp"],
+            path: "Tests"
         ),
     ]
 )

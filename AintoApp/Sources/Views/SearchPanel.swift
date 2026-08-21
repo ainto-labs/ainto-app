@@ -1,3 +1,4 @@
+// swiftlint:disable type_body_length function_body_length cyclomatic_complexity identifier_name file_length
 import AppKit
 import SwiftUI
 
@@ -72,6 +73,8 @@ final class SearchPanel: NSPanel {
         viewModel.onGrabSelection = { [weak self] completion in
             self?.grabSelectionFromPreviousApp(completion: completion)
         }
+        viewModel.fileSearch.onOpen = { [weak self] in self?.hidePanel() }
+        viewModel.onSystemActionCompleted = { [weak self] in self?.hidePanel() }
 
         viewModel.loadAISettings()
     }
@@ -80,8 +83,12 @@ final class SearchPanel: NSPanel {
     private var hasUserPosition = false
 
     func showPanel() {
-        // Remember the currently focused app before showing
-        previousApp = NSWorkspace.shared.frontmostApplication
+        // Alias editing activates Ainto. Preserve the last external app so
+        // actions still return to the user's actual target application.
+        if let frontmost = NSWorkspace.shared.frontmostApplication,
+           frontmost.bundleIdentifier != Bundle.main.bundleIdentifier {
+            previousApp = frontmost
+        }
 
         // Pick up any Settings change to the AI master switch.
         viewModel.loadAISettings()
@@ -109,6 +116,7 @@ final class SearchPanel: NSPanel {
 
     func hidePanel() {
         hideActionPanel()
+        viewModel.prepareForPanelHide()
         orderOut(nil)
     }
 
@@ -141,34 +149,56 @@ final class SearchPanel: NSPanel {
     }
 
     /// Hide panel, activate previous app, simulate Cmd+C to grab selection, then call back.
-    func grabSelectionFromPreviousApp(completion: @escaping (String) -> Void) {
-        let pasteboard = NSPasteboard.general
-        let previousContent = pasteboard.string(forType: .string)
+    func grabSelectionFromPreviousApp(completion: @MainActor @escaping (SelectionCaptureResult) -> Void) {
+        guard AXIsProcessTrusted() else {
+            let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
+            AXIsProcessTrustedWithOptions(options)
+            let message = "Ainto needs Accessibility permission to read selected text. "
+                + "Enable Ainto in System Settings → Privacy & Security → Accessibility, then try again."
+            completion(.failure(message))
+            return
+        }
+        guard let previousApp else {
+            completion(.failure("Ainto could not identify the app containing the selected text."))
+            return
+        }
 
-        // Hide panel and activate previous app
-        hidePanel()
-        previousApp?.activate()
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let pasteboard = NSPasteboard.general
+            let previousContent = pasteboard.string(forType: .string)
 
-        // Wait for app activation, then simulate Cmd+C
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            hidePanel()
+            previousApp.activate()
+            try? await Task.sleep(nanoseconds: 150_000_000)
+
             pasteboard.clearContents()
-            self.simulateCopy()
+            let clearedChangeCount = pasteboard.changeCount
+            simulateCopy()
 
-            // Wait for clipboard to update
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                let selection = pasteboard.string(forType: .string) ?? ""
-
-                // Restore previous clipboard content
-                pasteboard.clearContents()
-                if let prev = previousContent {
-                    pasteboard.setString(prev, forType: .string)
-                    pasteboard.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
+            // Some applications update the pasteboard asynchronously. Poll for
+            // at most one second instead of assuming 150 ms is always enough.
+            var selection = ""
+            for _ in 0..<20 {
+                if pasteboard.changeCount != clearedChangeCount,
+                   let copiedText = pasteboard.string(forType: .string) {
+                    selection = copiedText
+                    break
                 }
-
-                // Re-show panel and call back
-                self.makeKeyAndOrderFront(nil)
-                completion(selection)
+                try? await Task.sleep(nanoseconds: 50_000_000)
             }
+
+            pasteboard.clearContents()
+            if let previousContent {
+                pasteboard.setString(previousContent, forType: .string)
+                pasteboard.setData(
+                    Data(),
+                    forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType")
+                )
+            }
+
+            makeKeyAndOrderFront(nil)
+            completion(.success(selection))
         }
     }
 
@@ -190,8 +220,7 @@ final class SearchPanel: NSPanel {
         guard !actions.isEmpty else { return }
         actionSelectedIndex = 0
 
-        let title = viewModel.results.indices.contains(viewModel.selectedIndex)
-            ? viewModel.results[viewModel.selectedIndex].title : ""
+        let title = viewModel.currentActionTitle
 
         let panelView = ActionPanelView(
             title: title,
@@ -235,8 +264,7 @@ final class SearchPanel: NSPanel {
     func updateActionPanelSelection() {
         guard let window = actionWindow else { return }
         let actions = viewModel.currentActions
-        let title = viewModel.results.indices.contains(viewModel.selectedIndex)
-            ? viewModel.results[viewModel.selectedIndex].title : ""
+        let title = viewModel.currentActionTitle
 
         let panelView = ActionPanelView(
             title: title,
