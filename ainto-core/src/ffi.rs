@@ -102,7 +102,7 @@ pub extern "C" fn rc_discover_apps(store_icons: bool) -> *const c_char {
     if let Ok(mut idx) = APP_INDEX.lock() {
         // Load rankings
         let rankings = if let Ok(cfg_dir) = config::config_dir() {
-            crate::ranking::load_rankings(&cfg_dir.join("ranking.toml"))
+            crate::ranking::all_rankings(&cfg_dir.join("ranking.toml"))
         } else {
             std::collections::HashMap::new()
         };

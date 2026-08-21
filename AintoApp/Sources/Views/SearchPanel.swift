@@ -86,6 +86,11 @@ final class SearchPanel: NSPanel {
         // Pick up any Settings change to the AI master switch.
         viewModel.loadAISettings()
 
+        // Refresh the in-memory snippet/AI-command lists that search reads from,
+        // so typing never has to hit disk.
+        viewModel.loadSnippets()
+        viewModel.loadAICommands()
+
         if !hasUserPosition {
             let screen = NSScreen.screens.first(where: {
                 NSMouseInRect(NSEvent.mouseLocation, $0.frame, false)

@@ -506,36 +506,22 @@ final class SearchViewModel: ObservableObject {
             }
         }
 
-        // Search snippets
-        var snippetResults: [SearchResult] = []
-        if let cStr = rc_snippets_load() {
-            let jsonStr = String(cString: cStr)
-            rc_free_string(cStr)
-
-            if let data = jsonStr.data(using: .utf8),
-               let snippets = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
-                snippetResults = snippets
-                    .filter { snippet in
-                        let name = snippet["name"] as? String ?? ""
-                        let keyword = snippet["keyword"] as? String ?? ""
-                        return fuzzyMatch(query, name) || fuzzyMatch(query, keyword)
-                    }
-                    .prefix(5)
-                    .map { snippet in
-                        let name = snippet["name"] as? String ?? ""
-                        let keyword = snippet["keyword"] as? String ?? ""
-                        let expansion = snippet["expansion"] as? String ?? ""
-                        return SearchResult(
-                            title: name,
-                            subtitle: "Snippet: \(keyword)",
-                            icon: nil,
-                            systemIcon: "doc.text.fill"
-                        ) { [weak self] in
-                            self?.expandAndPasteSnippet(expansion)
-                        }
-                    }
+        // Search snippets. Uses the in-memory copy — refreshed when the panel
+        // opens and by the config watcher — so a keystroke never reads disk.
+        let snippetResults: [SearchResult] = snippets
+            .filter { fuzzyMatch(query, $0.name) || fuzzyMatch(query, $0.keyword) }
+            .prefix(5)
+            .map { snippet in
+                let expansion = snippet.expansion
+                return SearchResult(
+                    title: snippet.name,
+                    subtitle: "Snippet: \(snippet.keyword)",
+                    icon: nil,
+                    systemIcon: "doc.text.fill"
+                ) { [weak self] in
+                    self?.expandAndPasteSnippet(expansion)
+                }
             }
-        }
 
         // Built-in commands that fuzzy match
         var commandResults: [SearchResult] = []
@@ -544,15 +530,15 @@ final class SearchViewModel: ObservableObject {
         // AI commands (built-in + custom) — fuzzy match. Hidden entirely when
         // the AI master switch is off.
         if aiEnabled {
-            let matchingAICommands = AICommand.loadAll().filter { cmd in
-                fuzzyMatch(q, cmd.name)
-            }
-            let rankedAICommands = matchingAICommands.sorted { a, b in
-                self.commandRanking(for: a.name) > self.commandRanking(for: b.name)
-            }
-            for cmd in rankedAICommands.prefix(6) {
-                let command = cmd
-                let cmdScore = fuzzyScore(q, command.name) + self.commandRanking(for: command.name)
+            // Rank once per command rather than inside the sort comparator,
+            // which called it O(n log n) times per keystroke.
+            let rankedAICommands = aiCommands
+                .filter { fuzzyMatch(q, $0.name) }
+                .map { (command: $0, rank: self.commandRanking(for: $0.name)) }
+                .sorted { $0.rank > $1.rank }
+            for entry in rankedAICommands.prefix(6) {
+                let command = entry.command
+                let cmdScore = fuzzyScore(q, command.name) + entry.rank
                 var result = SearchResult(
                     title: command.name,
                     subtitle: "AI Command",
@@ -1108,12 +1094,11 @@ final class SearchViewModel: ObservableObject {
             ) { [weak self] in self?.goToAICommands() })
 
             // AI Commands — sorted by usage, top 4
-            let aiCommands = AICommand.loadAll()
-            let sorted = aiCommands.sorted { a, b in
-                commandRanking(for: a.name) > commandRanking(for: b.name)
-            }
-            for cmd in sorted.prefix(4) {
-                let command = cmd
+            let sorted = aiCommands
+                .map { (command: $0, rank: commandRanking(for: $0.name)) }
+                .sorted { $0.rank > $1.rank }
+            for entry in sorted.prefix(4) {
+                let command = entry.command
                 var result = SearchResult(
                     title: command.name,
                     subtitle: "AI Command",
