@@ -197,6 +197,23 @@ pub extern "C" fn rc_get_ranking(key: *const c_char) -> i32 {
     crate::ranking::get_score(&path, &k)
 }
 
+/// Clear persisted rankings together with every in-memory ranking value.
+#[unsafe(no_mangle)]
+pub extern "C" fn rc_reset_rankings() -> i32 {
+    let Ok(cfg_dir) = config::config_dir() else { return -1 };
+    let path = cfg_dir.join("ranking.toml");
+    if crate::ranking::reset(&path).is_err() {
+        return -1;
+    }
+
+    if let Ok(mut idx) = APP_INDEX.lock() {
+        if let Some(ref mut index) = *idx {
+            index.apply_rankings(&std::collections::HashMap::new());
+        }
+    }
+    0
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn rc_update_ranking(app_path: *const c_char) {
     let Some(key) = from_c_str(app_path) else {

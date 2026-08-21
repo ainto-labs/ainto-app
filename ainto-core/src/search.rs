@@ -81,9 +81,10 @@ impl AppIndex {
     /// Apply frecency rankings loaded from disk.
     pub fn apply_rankings(&mut self, rankings: &std::collections::HashMap<String, crate::ranking::RankingEntry>) {
         for app in &mut self.apps {
-            if let Some(entry) = rankings.get(&app.path) {
-                app.ranking = entry.frecency_score();
-            }
+            app.ranking = rankings
+                .get(&app.path)
+                .map(crate::ranking::RankingEntry::frecency_score)
+                .unwrap_or(0);
         }
     }
 

@@ -38,6 +38,9 @@ int32_t rc_increment_ranking(const char* key);
 /// Get ranking for any key
 int32_t rc_get_ranking(const char* key);
 
+/// Clear persisted and in-memory rankings, returns 0 on success
+int32_t rc_reset_rankings(void);
+
 /// Update ranking for an app (called after launch)
 void rc_update_ranking(const char* app_path);
 

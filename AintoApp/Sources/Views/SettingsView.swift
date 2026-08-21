@@ -90,8 +90,7 @@ struct SettingsView: View {
         .alert("Reset Rankings", isPresented: $showResetConfirm) {
             Button("Cancel", role: .cancel) {}
             Button("Reset", role: .destructive) {
-                let path = ("~/.config/ainto/ranking.toml" as NSString).expandingTildeInPath
-                try? FileManager.default.removeItem(atPath: path)
+                _ = rc_reset_rankings()
             }
         } message: {
             Text("This will reset all app and command usage rankings. This cannot be undone.")

@@ -122,6 +122,18 @@ pub fn all_rankings(path: &Path) -> HashMap<String, RankingEntry> {
     with_cache(path, |rankings| rankings.clone())
 }
 
+/// Remove persisted rankings and clear the process-wide cache atomically.
+pub fn reset(path: &Path) -> Result<(), Error> {
+    let mut guard = CACHE.lock().unwrap_or_else(|error| error.into_inner());
+    match std::fs::remove_file(path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    *guard = Some(HashMap::new());
+    Ok(())
+}
+
 /// Increment a key and save. Returns the new frecency score.
 pub fn increment_and_save(path: &Path, key: &str) -> i32 {
     with_cache(path, |rankings| {
@@ -140,4 +152,27 @@ pub fn get_score(path: &Path, key: &str) -> i32 {
     with_cache(path, |rankings| {
         rankings.get(key).map(|e| e.frecency_score()).unwrap_or(0)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reset_clears_the_cache_and_removes_the_file() {
+        let directory = std::env::temp_dir().join(format!(
+            "ainto-ranking-test-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let path = directory.join("ranking.toml");
+
+        assert!(increment_and_save(&path, "app:test") > 0);
+        assert!(path.exists());
+
+        reset(&path).unwrap();
+
+        assert_eq!(get_score(&path, "app:test"), 0);
+        assert!(!path.exists());
+        std::fs::remove_dir_all(directory).ok();
+    }
 }
