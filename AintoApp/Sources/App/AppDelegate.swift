@@ -11,8 +11,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var textExpander: TextExpander?
     private var trayManager: TrayManager?
     private var settingsWindow: NSWindow?
-    private var configWatcherSources: [DispatchSourceFileSystemObject] = []
-    private var configWatcherFDs: [Int32] = []
+    /// Live config-file watchers, keyed by file name.
+    private var configWatchers: [String: DispatchSourceFileSystemObject] = [:]
 
     private var updaterController: SPUStandardUpdaterController?
 
@@ -76,43 +76,81 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         watchConfigDirectory()
     }
 
+    private static let watchedConfigFiles = ["snippets.toml", "ai-commands.toml", "config.toml"]
+
+    /// Delay before re-opening a config file that is missing or was replaced.
+    /// An atomic save briefly leaves no file at the path, so retry rather than
+    /// give up on the first failure.
+    private static let configWatchRearmDelay: TimeInterval = 1.0
+
+    private var configDirectory: String { NSHomeDirectory() + "/.config/ainto" }
+
     /// Monitor config files for external changes and reload automatically.
     private func watchConfigDirectory() {
-        let configDir = NSHomeDirectory() + "/.config/ainto"
-        let files = ["snippets.toml", "ai-commands.toml", "config.toml"]
+        for file in Self.watchedConfigFiles {
+            watchConfigFile(named: file)
+        }
+    }
 
-        for file in files {
-            let path = configDir + "/" + file
-            let fd = open(path, O_EVTONLY)
-            guard fd >= 0 else { continue }
-            configWatcherFDs.append(fd)
+    /// Watch one config file, re-arming whenever the path stops pointing at the
+    /// inode we opened.
+    ///
+    /// A kqueue watcher follows the file descriptor, not the path. Editors save
+    /// by writing a temp file and renaming it over the original, which swaps the
+    /// inode out — so after a rename or delete the old watcher is live but deaf,
+    /// and the path has to be re-opened. The same retry covers a file that does
+    /// not exist yet at launch (snippets.toml is only created on first save).
+    private func watchConfigFile(named name: String) {
+        let fd = open(configDirectory + "/" + name, O_EVTONLY)
+        guard fd >= 0 else {
+            scheduleConfigWatchRearm(named: name)
+            return
+        }
 
-            let source = DispatchSource.makeFileSystemObjectSource(
-                fileDescriptor: fd,
-                eventMask: [.write, .rename, .delete],
-                queue: .main
-            )
-            source.setEventHandler { [weak self] in
-                if file == "config.toml" {
-                    // Covers both the Settings toggle (saved via rc_config_save)
-                    // and manual TOML edits.
-                    self?.applySnippetsEnabled()
-                } else {
-                    self?.searchPanel?.viewModel.loadSnippets()
-                    self?.searchPanel?.viewModel.loadAICommands()
-                    self?.textExpander?.reloadSnippets()
-                }
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd,
+            eventMask: [.write, .rename, .delete],
+            queue: .main
+        )
+        source.setEventHandler { [weak self] in
+            guard let self, let source = self.configWatchers[name] else { return }
+            let events = source.data
+            self.reloadConfigFile(named: name)
+            if events.contains(.rename) || events.contains(.delete) {
+                source.cancel()
+                self.configWatchers[name] = nil
+                self.scheduleConfigWatchRearm(named: name)
             }
-            source.setCancelHandler { close(fd) }
-            source.resume()
-            configWatcherSources.append(source)
+        }
+        source.setCancelHandler { close(fd) }
+        configWatchers[name] = source
+        source.resume()
+    }
+
+    private func scheduleConfigWatchRearm(named name: String) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.configWatchRearmDelay) { [weak self] in
+            guard let self, self.configWatchers[name] == nil else { return }
+            self.watchConfigFile(named: name)
+        }
+    }
+
+    private func reloadConfigFile(named name: String) {
+        if name == "config.toml" {
+            // Covers both the Settings toggle (saved via rc_config_save)
+            // and manual TOML edits.
+            applySnippetsEnabled()
+        } else {
+            searchPanel?.viewModel.loadSnippets()
+            searchPanel?.viewModel.loadAICommands()
+            textExpander?.reloadSnippets()
         }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         clipboardMonitor?.stopMonitoring()
         textExpander?.stop()
-        configWatcherSources.forEach { $0.cancel() }
+        configWatchers.values.forEach { $0.cancel() }
+        configWatchers.removeAll()
     }
 
     private func toggleSearchPanel() {
