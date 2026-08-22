@@ -121,7 +121,7 @@ impl ClipboardStore {
         let (content_type, text, image_path) = match content {
             ClipboardContent::Text(t) => ("text", Some(t.clone()), None),
             ClipboardContent::Image { png_bytes, .. } => {
-                let fname = format!("{:016x}.png", hash);
+                let fname = format!("{hash:016x}.png");
                 let path = self.image_dir.join(&fname);
                 std::fs::write(&path, png_bytes)?;
                 ("image", None, Some(fname))
@@ -292,10 +292,7 @@ impl ClipboardStore {
     /// Evict oldest entries within a pool defined by a hardcoded WHERE clause.
     /// `where_clause` must be a literal — no user input is interpolated.
     fn evict_pool(&mut self, where_clause: &str, limit: usize) -> Result<(), Error> {
-        let count_sql = format!(
-            "SELECT COUNT(*) FROM clipboard_items WHERE {}",
-            where_clause
-        );
+        let count_sql = format!("SELECT COUNT(*) FROM clipboard_items WHERE {where_clause}");
         let count: i64 = self.db.query_row(&count_sql, [], |row| row.get(0))?;
 
         if count as usize <= limit {
@@ -305,8 +302,7 @@ impl ClipboardStore {
         let to_delete = count as usize - limit;
 
         let select_sql = format!(
-            "SELECT id, image_path FROM clipboard_items WHERE {} ORDER BY last_copied_at ASC LIMIT ?1",
-            where_clause
+            "SELECT id, image_path FROM clipboard_items WHERE {where_clause} ORDER BY last_copied_at ASC LIMIT ?1"
         );
         let mut stmt = self.db.prepare(&select_sql)?;
         let items: Vec<(i64, Option<String>)> = stmt
