@@ -11,8 +11,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var textExpander: TextExpander?
     private var trayManager: TrayManager?
     private var settingsWindow: NSWindow?
-    private var configWatcherSources: [DispatchSourceFileSystemObject] = []
-    private var configWatcherFDs: [Int32] = []
+    /// Live config-file watchers, keyed by file name.
+    private var configWatchers: [String: DispatchSourceFileSystemObject] = [:]
+    /// Watches for files that are created after launch without polling.
+    private var configDirectoryWatcher: DispatchSourceFileSystemObject?
 
     private var updaterController: SPUStandardUpdaterController?
 
@@ -76,43 +78,110 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         watchConfigDirectory()
     }
 
-    /// Monitor config files for external changes and reload automatically.
+    private static let watchedConfigFiles = ["snippets.toml", "ai-commands.toml", "config.toml"]
+
+    private var configDirectory: String { NSHomeDirectory() + "/.config/ainto" }
+
+    /// Monitor the directory so files missing at launch can be watched as soon
+    /// as they are created, without waking the app on a polling timer.
     private func watchConfigDirectory() {
-        let configDir = NSHomeDirectory() + "/.config/ainto"
-        let files = ["snippets.toml", "ai-commands.toml", "config.toml"]
+        guard configDirectoryWatcher == nil else { return }
+        try? FileManager.default.createDirectory(
+            atPath: configDirectory,
+            withIntermediateDirectories: true
+        )
+        let fileDescriptor = open(configDirectory, O_EVTONLY)
+        guard fileDescriptor >= 0 else { return }
 
-        for file in files {
-            let path = configDir + "/" + file
-            let fd = open(path, O_EVTONLY)
-            guard fd >= 0 else { continue }
-            configWatcherFDs.append(fd)
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fileDescriptor,
+            eventMask: [.write, .rename, .delete],
+            queue: .main
+        )
+        source.setEventHandler { [weak self] in
+            guard let self, let activeSource = self.configDirectoryWatcher else { return }
+            let events = activeSource.data
+            if events.contains(.rename) || events.contains(.delete) {
+                activeSource.cancel()
+                self.configDirectoryWatcher = nil
+                self.configWatchers.values.forEach { $0.cancel() }
+                self.configWatchers.removeAll()
+                self.watchConfigDirectory()
+                return
+            }
+            for name in Self.watchedConfigFiles where self.configWatchers[name] == nil {
+                self.watchConfigFile(named: name, reloadAfterOpening: true)
+            }
+        }
+        source.setCancelHandler { close(fileDescriptor) }
+        configDirectoryWatcher = source
+        source.resume()
 
-            let source = DispatchSource.makeFileSystemObjectSource(
-                fileDescriptor: fd,
-                eventMask: [.write, .rename, .delete],
-                queue: .main
-            )
-            source.setEventHandler { [weak self] in
-                if file == "config.toml" {
-                    // Covers both the Settings toggle (saved via rc_config_save)
-                    // and manual TOML edits.
-                    self?.applySnippetsEnabled()
-                } else {
-                    self?.searchPanel?.viewModel.loadSnippets()
-                    self?.searchPanel?.viewModel.loadAICommands()
-                    self?.textExpander?.reloadSnippets()
+        for name in Self.watchedConfigFiles {
+            watchConfigFile(named: name, reloadAfterOpening: false)
+        }
+    }
+
+    /// Watch one config file, re-arming whenever the path stops pointing at the
+    /// inode we opened.
+    ///
+    /// A kqueue watcher follows the file descriptor, not the path. Editors save
+    /// by writing a temp file and renaming it over the original, which swaps the
+    /// inode out — so after a rename or delete the old watcher is live but deaf,
+    /// and the path has to be re-opened. The same retry covers a file that does
+    /// not exist yet at launch (snippets.toml is only created on first save).
+    private func watchConfigFile(named name: String, reloadAfterOpening: Bool) {
+        guard configWatchers[name] == nil else { return }
+        let fileDescriptor = open(configDirectory + "/" + name, O_EVTONLY)
+        guard fileDescriptor >= 0 else { return }
+
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fileDescriptor,
+            eventMask: [.write, .rename, .delete],
+            queue: .main
+        )
+        source.setEventHandler { [weak self] in
+            guard let self, let activeSource = self.configWatchers[name] else { return }
+            let events = activeSource.data
+            self.reloadConfigFile(named: name)
+            if events.contains(.rename) || events.contains(.delete) {
+                activeSource.cancel()
+                self.configWatchers[name] = nil
+                // Atomic saves normally leave the replacement at the path by
+                // the next main-queue turn. If it is still missing, the
+                // directory watcher will install a watcher when it is created.
+                DispatchQueue.main.async { [weak self] in
+                    self?.watchConfigFile(named: name, reloadAfterOpening: true)
                 }
             }
-            source.setCancelHandler { close(fd) }
-            source.resume()
-            configWatcherSources.append(source)
+        }
+        source.setCancelHandler { close(fileDescriptor) }
+        configWatchers[name] = source
+        source.resume()
+        if reloadAfterOpening {
+            reloadConfigFile(named: name)
+        }
+    }
+
+    private func reloadConfigFile(named name: String) {
+        if name == "config.toml" {
+            // Covers both the Settings toggle (saved via rc_config_save)
+            // and manual TOML edits.
+            applySnippetsEnabled()
+        } else {
+            searchPanel?.viewModel.loadSnippets()
+            searchPanel?.viewModel.loadAICommands()
+            textExpander?.reloadSnippets()
         }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         clipboardMonitor?.stopMonitoring()
         textExpander?.stop()
-        configWatcherSources.forEach { $0.cancel() }
+        configWatchers.values.forEach { $0.cancel() }
+        configWatchers.removeAll()
+        configDirectoryWatcher?.cancel()
+        configDirectoryWatcher = nil
     }
 
     private func toggleSearchPanel() {

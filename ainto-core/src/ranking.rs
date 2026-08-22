@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 
@@ -98,21 +99,80 @@ pub fn save_rankings(path: &Path, rankings: &HashMap<String, RankingEntry>) -> R
     Ok(())
 }
 
+/// Process-wide cache of the ranking table.
+///
+/// `get_score` is on the search-scoring path and is called once per candidate
+/// while ranking results, so re-reading and re-parsing the TOML on every call
+/// cost a file read per lookup. The file is only ever written through
+/// `increment_and_save`, so the cache stays authoritative for this process.
+///
+/// Assumes a single ranking file per process (always `<config_dir>/ranking.toml`);
+/// the first path passed in wins.
+static CACHE: Mutex<Option<HashMap<String, RankingEntry>>> = Mutex::new(None);
+
+/// Run `f` against the cached ranking table, loading it from disk on first use.
+fn with_cache<T>(path: &Path, f: impl FnOnce(&mut HashMap<String, RankingEntry>) -> T) -> T {
+    let mut guard = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    let rankings = guard.get_or_insert_with(|| load_rankings(path));
+    f(rankings)
+}
+
+/// Snapshot of the current ranking table.
+pub fn all_rankings(path: &Path) -> HashMap<String, RankingEntry> {
+    with_cache(path, |rankings| rankings.clone())
+}
+
+/// Remove persisted rankings and clear the process-wide cache atomically.
+pub fn reset(path: &Path) -> Result<(), Error> {
+    let mut guard = CACHE.lock().unwrap_or_else(|error| error.into_inner());
+    match std::fs::remove_file(path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    *guard = Some(HashMap::new());
+    Ok(())
+}
+
 /// Increment a key and save. Returns the new frecency score.
 pub fn increment_and_save(path: &Path, key: &str) -> i32 {
-    let mut rankings = load_rankings(path);
-    rankings
-        .entry(key.to_string())
-        .and_modify(|e| e.increment())
-        .or_insert_with(RankingEntry::new);
-    let _ = save_rankings(path, &rankings);
-    rankings.get(key).map(|e| e.frecency_score()).unwrap_or(0)
+    with_cache(path, |rankings| {
+        let entry = rankings
+            .entry(key.to_string())
+            .and_modify(|e| e.increment())
+            .or_insert_with(RankingEntry::new);
+        let score = entry.frecency_score();
+        let _ = save_rankings(path, rankings);
+        score
+    })
 }
 
 /// Get frecency score for a key.
 pub fn get_score(path: &Path, key: &str) -> i32 {
-    load_rankings(path)
-        .get(key)
-        .map(|e| e.frecency_score())
-        .unwrap_or(0)
+    with_cache(path, |rankings| {
+        rankings.get(key).map(|e| e.frecency_score()).unwrap_or(0)
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reset_clears_the_cache_and_removes_the_file() {
+        let directory = std::env::temp_dir().join(format!(
+            "ainto-ranking-test-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let path = directory.join("ranking.toml");
+
+        assert!(increment_and_save(&path, "app:test") > 0);
+        assert!(path.exists());
+
+        reset(&path).unwrap();
+
+        assert_eq!(get_score(&path, "app:test"), 0);
+        assert!(!path.exists());
+        std::fs::remove_dir_all(directory).ok();
+    }
 }

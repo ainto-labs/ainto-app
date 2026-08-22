@@ -14,13 +14,15 @@ struct AICommand: Identifiable {
     }
 
     /// Load all commands from TOML (includes defaults on first run).
-    static func loadAll() -> [AICommand] {
-        guard let cStr = rc_ai_commands_load() else { return [] }
+    /// Returns nil when the file exists but could not be read — callers must
+    /// not persist over a file they failed to load.
+    static func loadAll() -> [AICommand]? {
+        guard let cStr = rc_ai_commands_load() else { return nil }
         let jsonStr = String(cString: cStr)
         rc_free_string(cStr)
 
         guard let data = jsonStr.data(using: .utf8),
-              let entries = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }
+              let entries = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return nil }
 
         return entries.map { entry in
             AICommand(
@@ -296,7 +298,11 @@ final class SearchViewModel: ObservableObject {
     private var claudeSession: UnsafeMutableRawPointer?
     private var claudeSessionId: String?
 
-    // Snippet state
+    // Snippet state.
+    // `snippetsLoaded` stays false until the file has been read successfully;
+    // it guards saving so an unreadable file is never overwritten with an
+    // empty list. Same pattern as `hasLoaded` in SettingsView.
+    private var snippetsLoaded = false
     @Published var snippets: [SnippetItem] = []
     @Published var snippetSelectedIndex: Int = 0
     @Published var snippetFilter: String = ""
@@ -311,6 +317,7 @@ final class SearchViewModel: ObservableObject {
     var claudeBinary: String = "claude"
 
     // AI Commands state
+    private var aiCommandsLoaded = false
     @Published var aiCommands: [AICommand] = []
     @Published var aiCommandSelectedIndex: Int = 0
     @Published var aiCommandFilter: String = ""
@@ -506,36 +513,22 @@ final class SearchViewModel: ObservableObject {
             }
         }
 
-        // Search snippets
-        var snippetResults: [SearchResult] = []
-        if let cStr = rc_snippets_load() {
-            let jsonStr = String(cString: cStr)
-            rc_free_string(cStr)
-
-            if let data = jsonStr.data(using: .utf8),
-               let snippets = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
-                snippetResults = snippets
-                    .filter { snippet in
-                        let name = snippet["name"] as? String ?? ""
-                        let keyword = snippet["keyword"] as? String ?? ""
-                        return fuzzyMatch(query, name) || fuzzyMatch(query, keyword)
-                    }
-                    .prefix(5)
-                    .map { snippet in
-                        let name = snippet["name"] as? String ?? ""
-                        let keyword = snippet["keyword"] as? String ?? ""
-                        let expansion = snippet["expansion"] as? String ?? ""
-                        return SearchResult(
-                            title: name,
-                            subtitle: "Snippet: \(keyword)",
-                            icon: nil,
-                            systemIcon: "doc.text.fill"
-                        ) { [weak self] in
-                            self?.expandAndPasteSnippet(expansion)
-                        }
-                    }
+        // Search snippets. Uses the in-memory copy — refreshed when the panel
+        // opens and by the config watcher — so a keystroke never reads disk.
+        let snippetResults: [SearchResult] = snippets
+            .filter { fuzzyMatch(query, $0.name) || fuzzyMatch(query, $0.keyword) }
+            .prefix(5)
+            .map { snippet in
+                let expansion = snippet.expansion
+                return SearchResult(
+                    title: snippet.name,
+                    subtitle: "Snippet: \(snippet.keyword)",
+                    icon: nil,
+                    systemIcon: "doc.text.fill"
+                ) { [weak self] in
+                    self?.expandAndPasteSnippet(expansion)
+                }
             }
-        }
 
         // Built-in commands that fuzzy match
         var commandResults: [SearchResult] = []
@@ -544,15 +537,15 @@ final class SearchViewModel: ObservableObject {
         // AI commands (built-in + custom) — fuzzy match. Hidden entirely when
         // the AI master switch is off.
         if aiEnabled {
-            let matchingAICommands = AICommand.loadAll().filter { cmd in
-                fuzzyMatch(q, cmd.name)
-            }
-            let rankedAICommands = matchingAICommands.sorted { a, b in
-                self.commandRanking(for: a.name) > self.commandRanking(for: b.name)
-            }
-            for cmd in rankedAICommands.prefix(6) {
-                let command = cmd
-                let cmdScore = fuzzyScore(q, command.name) + self.commandRanking(for: command.name)
+            // Rank once per command rather than inside the sort comparator,
+            // which called it O(n log n) times per keystroke.
+            let rankedAICommands = aiCommands
+                .filter { fuzzyMatch(q, $0.name) }
+                .map { (command: $0, rank: self.commandRanking(for: $0.name)) }
+                .sorted { $0.rank > $1.rank }
+            for entry in rankedAICommands.prefix(6) {
+                let command = entry.command
+                let cmdScore = fuzzyScore(q, command.name) + entry.rank
                 var result = SearchResult(
                     title: command.name,
                     subtitle: "AI Command",
@@ -789,6 +782,10 @@ final class SearchViewModel: ObservableObject {
     // MARK: - Snippets
 
     func loadSnippets() {
+        // A later reload can fail after an earlier one succeeded. Close the
+        // save gate before every attempt so stale in-memory data can never
+        // overwrite a file that is currently unreadable.
+        snippetsLoaded = false
         guard let cStr = rc_snippets_load() else { return }
         let jsonStr = String(cString: cStr)
         rc_free_string(cStr)
@@ -804,10 +801,13 @@ final class SearchViewModel: ObservableObject {
                 expansion: entry["expansion"] as? String ?? ""
             )
         }
+        snippetsLoaded = true
         snippetSelectedIndex = 0
     }
 
     func saveSnippets() {
+        // Never write over a file we could not read.
+        guard snippetsLoaded else { return }
         let jsonArray: [[String: Any]] = snippets.map { s in
             ["id": s.id, "name": s.name, "keyword": s.keyword, "expansion": s.expansion]
         }
@@ -885,7 +885,12 @@ final class SearchViewModel: ObservableObject {
     // MARK: - AI Commands
 
     func loadAICommands() {
-        aiCommands = AICommand.loadAll()
+        // Keep saves disabled unless this exact reload succeeded. Otherwise an
+        // external malformed edit could be replaced by stale in-memory data.
+        aiCommandsLoaded = false
+        guard let loaded = AICommand.loadAll() else { return }
+        aiCommands = loaded
+        aiCommandsLoaded = true
         aiCommandSelectedIndex = 0
     }
 
@@ -920,6 +925,8 @@ final class SearchViewModel: ObservableObject {
     }
 
     func saveAICommands() {
+        // Never write over a file we could not read.
+        guard aiCommandsLoaded else { return }
         let jsonArray: [[String: Any]] = aiCommands.map { cmd in
             ["name": cmd.name, "icon": cmd.icon, "prompt": cmd.prompt]
         }
@@ -1108,12 +1115,11 @@ final class SearchViewModel: ObservableObject {
             ) { [weak self] in self?.goToAICommands() })
 
             // AI Commands — sorted by usage, top 4
-            let aiCommands = AICommand.loadAll()
-            let sorted = aiCommands.sorted { a, b in
-                commandRanking(for: a.name) > commandRanking(for: b.name)
-            }
-            for cmd in sorted.prefix(4) {
-                let command = cmd
+            let sorted = aiCommands
+                .map { (command: $0, rank: commandRanking(for: $0.name)) }
+                .sorted { $0.rank > $1.rank }
+            for entry in sorted.prefix(4) {
+                let command = entry.command
                 var result = SearchResult(
                     title: command.name,
                     subtitle: "AI Command",

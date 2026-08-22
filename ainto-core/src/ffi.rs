@@ -47,6 +47,9 @@ pub extern "C" fn rc_free_string(s: *const c_char) {
 // Config
 // ============================================================
 
+/// Returns null when the config file exists but could not be read or parsed.
+/// Callers must treat null as "unknown" and fall back to their own defaults —
+/// never as "empty config", or saving would overwrite a file we failed to read.
 #[unsafe(no_mangle)]
 pub extern "C" fn rc_config_load() -> *const c_char {
     match config::Config::load() {
@@ -54,10 +57,7 @@ pub extern "C" fn rc_config_load() -> *const c_char {
             let json = serde_json::to_string(&cfg).unwrap_or_default();
             to_c_string(&json)
         }
-        Err(_) => {
-            let json = serde_json::to_string(&config::Config::default()).unwrap_or_default();
-            to_c_string(&json)
-        }
+        Err(_) => ptr::null(),
     }
 }
 
@@ -102,7 +102,7 @@ pub extern "C" fn rc_discover_apps(store_icons: bool) -> *const c_char {
     if let Ok(mut idx) = APP_INDEX.lock() {
         // Load rankings
         let rankings = if let Ok(cfg_dir) = config::config_dir() {
-            crate::ranking::load_rankings(&cfg_dir.join("ranking.toml"))
+            crate::ranking::all_rankings(&cfg_dir.join("ranking.toml"))
         } else {
             std::collections::HashMap::new()
         };
@@ -195,6 +195,23 @@ pub extern "C" fn rc_get_ranking(key: *const c_char) -> i32 {
     let Ok(cfg_dir) = config::config_dir() else { return 0 };
     let path = cfg_dir.join("ranking.toml");
     crate::ranking::get_score(&path, &k)
+}
+
+/// Clear persisted rankings together with every in-memory ranking value.
+#[unsafe(no_mangle)]
+pub extern "C" fn rc_reset_rankings() -> i32 {
+    let Ok(cfg_dir) = config::config_dir() else { return -1 };
+    let path = cfg_dir.join("ranking.toml");
+    if crate::ranking::reset(&path).is_err() {
+        return -1;
+    }
+
+    if let Ok(mut idx) = APP_INDEX.lock() {
+        if let Some(ref mut index) = *idx {
+            index.apply_rankings(&std::collections::HashMap::new());
+        }
+    }
+    0
 }
 
 #[unsafe(no_mangle)]
@@ -454,12 +471,16 @@ pub extern "C" fn rc_clipboard_clear() -> i32 {
 // Snippets
 // ============================================================
 
+/// Returns null when snippets.toml exists but could not be read or parsed.
+/// A missing file is not an error — it yields an empty list.
 #[unsafe(no_mangle)]
 pub extern "C" fn rc_snippets_load() -> *const c_char {
     let path = config::config_dir()
         .map(|d| d.join("snippets.toml"))
         .unwrap_or_default();
-    let snips = snippets::load_snippets(&path).unwrap_or_default();
+    let Ok(snips) = snippets::load_snippets(&path) else {
+        return ptr::null();
+    };
     let json = serde_json::to_string(&snips).unwrap_or_else(|_| "[]".to_string());
     to_c_string(&json)
 }
@@ -499,12 +520,16 @@ pub extern "C" fn rc_snippet_expand(
 // AI Commands
 // ============================================================
 
+/// Returns null when ai-commands.toml exists but could not be read or parsed.
+/// A missing file is not an error — it is seeded with the built-in defaults.
 #[unsafe(no_mangle)]
 pub extern "C" fn rc_ai_commands_load() -> *const c_char {
     let path = config::config_dir()
         .map(|d| d.join("ai-commands.toml"))
         .unwrap_or_default();
-    let cmds = crate::ai_commands::load_commands(&path).unwrap_or_default();
+    let Ok(cmds) = crate::ai_commands::load_commands(&path) else {
+        return ptr::null();
+    };
     let json = serde_json::to_string(&cmds).unwrap_or_else(|_| "[]".to_string());
     to_c_string(&json)
 }
