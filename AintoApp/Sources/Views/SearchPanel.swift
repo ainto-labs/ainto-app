@@ -1,3 +1,4 @@
+// swiftlint:disable type_body_length function_body_length cyclomatic_complexity identifier_name file_length
 import AppKit
 import SwiftUI
 
@@ -72,6 +73,8 @@ final class SearchPanel: NSPanel {
         viewModel.onGrabSelection = { [weak self] completion in
             self?.grabSelectionFromPreviousApp(completion: completion)
         }
+        viewModel.fileSearch.onOpen = { [weak self] in self?.hidePanel() }
+        viewModel.onSystemActionCompleted = { [weak self] in self?.hidePanel() }
 
         viewModel.loadAISettings()
     }
@@ -109,6 +112,7 @@ final class SearchPanel: NSPanel {
 
     func hidePanel() {
         hideActionPanel()
+        viewModel.prepareForPanelHide()
         orderOut(nil)
     }
 
@@ -190,8 +194,7 @@ final class SearchPanel: NSPanel {
         guard !actions.isEmpty else { return }
         actionSelectedIndex = 0
 
-        let title = viewModel.results.indices.contains(viewModel.selectedIndex)
-            ? viewModel.results[viewModel.selectedIndex].title : ""
+        let title = viewModel.currentActionTitle
 
         let panelView = ActionPanelView(
             title: title,
@@ -235,8 +238,7 @@ final class SearchPanel: NSPanel {
     func updateActionPanelSelection() {
         guard let window = actionWindow else { return }
         let actions = viewModel.currentActions
-        let title = viewModel.results.indices.contains(viewModel.selectedIndex)
-            ? viewModel.results[viewModel.selectedIndex].title : ""
+        let title = viewModel.currentActionTitle
 
         let panelView = ActionPanelView(
             title: title,

@@ -1,3 +1,4 @@
+// swiftlint:disable file_length type_body_length function_body_length identifier_name line_length cyclomatic_complexity
 import AppKit
 import Foundation
 import AintoCore
@@ -118,6 +119,8 @@ enum LauncherPage: Equatable {
     case clipboard
     case snippets
     case aiCommands
+    case fileSearch
+    case systemConfirmation
     case claude
 }
 
@@ -290,6 +293,12 @@ final class SearchViewModel: ObservableObject {
     @Published var page: LauncherPage = .main
     @Published var searchMode: SearchMode = .apps
 
+    let fileSearch = FileSearchService()
+    @Published var pendingSystemAction: SystemAction?
+    @Published var systemActionError: String?
+    @Published var isExecutingSystemAction = false
+    var onSystemActionCompleted: (() -> Void)?
+
     // Claude state
     @Published var claudeMessages: [ClaudeMessage] = []
     @Published var claudeIsStreaming = false
@@ -432,7 +441,30 @@ final class SearchViewModel: ObservableObject {
         focusFilterField()
     }
 
+    func goToFileSearch() {
+        page = .fileSearch
+        fileSearch.clear()
+        fileSearch.reloadConfiguration()
+        focusFilterField()
+    }
+
+    func prepareForPanelHide() {
+        // A pending confirmation must not outlive the panel. Reopening on a
+        // stale "Restart?" prompt leaves a destructive action one Return away,
+        // with nothing to show how long it has been sitting there. An action
+        // already executing is left alone, matching `goBack()`.
+        guard page == .systemConfirmation, !isExecutingSystemAction else { return }
+        pendingSystemAction = nil
+        systemActionError = nil
+        page = .main
+        searchMode = .apps
+        query = ""
+        selectedIndex = 0
+        results = buildDefaultResults()
+    }
+
     func goBack() {
+        if page == .systemConfirmation && isExecutingSystemAction { return }
         if page == .claude {
             claudeCancel()
             claudeMessages.removeAll()
@@ -442,6 +474,11 @@ final class SearchViewModel: ObservableObject {
             cancelEditingAICommand()
             return
         }
+        if page == .fileSearch {
+            fileSearch.clear()
+        }
+        pendingSystemAction = nil
+        systemActionError = nil
         clipboardFilter = "" // didSet handles cancel + debouncedClipboardFilter
         page = .main
         searchMode = .apps
@@ -608,6 +645,14 @@ final class SearchViewModel: ObservableObject {
             commandResults.append(r)
         }
 
+        if q == "f" || fuzzyMatch(q, "file search") {
+            commandResults.append(fileSearchCommandResult(score: q == "f" ? 300 : fuzzyScore(q, "File Search")))
+        }
+
+        for action in SystemAction.allCases where fuzzyMatch(q, action.title) {
+            commandResults.append(systemActionResult(action, score: fuzzyScore(q, action.title)))
+        }
+
         var allResults = appResults + commandResults + snippetResults
         allResults.sort { $0.score > $1.score }
         results = Array(allResults.prefix(20))
@@ -629,11 +674,13 @@ final class SearchViewModel: ObservableObject {
             let count = filteredAICommands.count
             guard count > 0 else { return }
             aiCommandSelectedIndex = max(0, min(aiCommandSelectedIndex + offset, count - 1))
+        case .fileSearch:
+            fileSearch.moveSelection(by: offset)
         case .main:
             guard !results.isEmpty else { return }
             selectedIndex = max(0, min(selectedIndex + offset, results.count - 1))
-        case .claude:
-            break // no list navigation in Claude view
+        case .systemConfirmation, .claude:
+            break // no list navigation on these pages
         }
     }
 
@@ -645,6 +692,10 @@ final class SearchViewModel: ObservableObject {
             expandSelectedSnippet()
         case .aiCommands:
             executeSelectedAICommand()
+        case .fileSearch:
+            fileSearch.openSelected()
+        case .systemConfirmation:
+            confirmSystemAction()
         case .main:
             guard selectedIndex < results.count else { return }
             results[selectedIndex].action()
@@ -900,6 +951,7 @@ final class SearchViewModel: ObservableObject {
               let config = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
         aiEnabled = config["ai_enabled"] as? Bool ?? true
         claudeBinary = (config["claude_binary"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "claude"
+        fileSearch.reloadConfiguration()
         exitAISurfacesIfDisabled()
     }
 
@@ -1007,8 +1059,23 @@ final class SearchViewModel: ObservableObject {
         case .main:
             guard selectedIndex < results.count else { return [] }
             return results[selectedIndex].actions
+        case .fileSearch:
+            guard fileSearch.results.indices.contains(fileSearch.selectedIndex) else { return [] }
+            return fileSearch.actions(for: fileSearch.results[fileSearch.selectedIndex])
         default:
             return []
+        }
+    }
+
+    var currentActionTitle: String {
+        switch page {
+        case .main:
+            return results.indices.contains(selectedIndex) ? results[selectedIndex].title : ""
+        case .fileSearch:
+            return fileSearch.results.indices.contains(fileSearch.selectedIndex)
+                ? fileSearch.results[fileSearch.selectedIndex].title : ""
+        default:
+            return ""
         }
     }
 
@@ -1090,6 +1157,8 @@ final class SearchViewModel: ObservableObject {
             icon: nil,
             systemIcon: "doc.on.clipboard"
         ) { [weak self] in self?.goToClipboard() })
+
+        results.append(fileSearchCommandResult(score: 0))
 
         results.append(SearchResult(
             title: "Snippets",
