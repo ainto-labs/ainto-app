@@ -449,8 +449,18 @@ final class SearchViewModel: ObservableObject {
     }
 
     func prepareForPanelHide() {
-        guard page == .fileSearch else { return }
-        fileSearch.clear()
+        // A pending confirmation must not outlive the panel. Reopening on a
+        // stale "Restart?" prompt leaves a destructive action one Return away,
+        // with nothing to show how long it has been sitting there. An action
+        // already executing is left alone, matching `goBack()`.
+        if page == .systemConfirmation, !isExecutingSystemAction {
+            pendingSystemAction = nil
+            systemActionError = nil
+        } else if page == .fileSearch {
+            fileSearch.clear()
+        } else {
+            return
+        }
         page = .main
         searchMode = .apps
         query = ""
