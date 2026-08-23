@@ -39,4 +39,13 @@ final class LauncherNavigationTests: XCTestCase {
 
         XCTAssertEqual(viewModel.page, .clipboard)
     }
+
+    func testFileSearchSurvivesHidingThePanel() {
+        let viewModel = SearchViewModel()
+        viewModel.page = .fileSearch
+
+        viewModel.prepareForPanelHide()
+
+        XCTAssertEqual(viewModel.page, .fileSearch)
+    }
 }

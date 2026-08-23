@@ -453,14 +453,9 @@ final class SearchViewModel: ObservableObject {
         // stale "Restart?" prompt leaves a destructive action one Return away,
         // with nothing to show how long it has been sitting there. An action
         // already executing is left alone, matching `goBack()`.
-        if page == .systemConfirmation, !isExecutingSystemAction {
-            pendingSystemAction = nil
-            systemActionError = nil
-        } else if page == .fileSearch {
-            fileSearch.clear()
-        } else {
-            return
-        }
+        guard page == .systemConfirmation, !isExecutingSystemAction else { return }
+        pendingSystemAction = nil
+        systemActionError = nil
         page = .main
         searchMode = .apps
         query = ""
