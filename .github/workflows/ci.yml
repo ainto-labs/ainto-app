@@ -25,7 +25,10 @@ jobs:
         with:
           # Keep in sync with rust-toolchain.toml.
           toolchain: '1.98.1'
-          components: clippy
+          components: clippy, rustfmt
+
+      - name: Check Rust formatting
+        run: cd ainto-core && cargo fmt -- --check
 
       - name: Lint Rust core
         run: cd ainto-core && cargo clippy --all-targets -- -D warnings

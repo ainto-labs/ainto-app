@@ -8,6 +8,9 @@ See the [README](README.md). Quick loop: `./build.sh` then `make run`.
 Use `make app` to build the `.app` bundle when testing bundle-only features
 (Sparkle updates, Launch at Login, menubar icon).
 
+Rust code must be rustfmt-clean; CI runs `cargo fmt --check`. Run
+`cd ainto-core && cargo fmt` before committing.
+
 ## Pull requests
 
 You don't need to open an issue first — direct contributions are welcome. For

@@ -1,0 +1,6 @@
+# Commits to skip in git blame (bulk formatting, no logic changes).
+# GitHub's blame view reads this file automatically. For local git blame:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# Format Rust sources with rustfmt (#9)
+19378124d028e20ea03a9bd7f0a9969ab612c594
