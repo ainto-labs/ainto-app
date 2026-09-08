@@ -196,7 +196,10 @@ mod tests {
 
     #[test]
     fn test_missing_clipboard_resolves_to_empty() {
-        assert_eq!(resolve_placeholders("before{clipboard}after", None), "beforeafter");
+        assert_eq!(
+            resolve_placeholders("before{clipboard}after", None),
+            "beforeafter"
+        );
     }
 
     #[test]
@@ -208,7 +211,10 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("snippets.toml");
 
-        assert!(load_snippets(&path).unwrap().is_empty(), "missing file is empty");
+        assert!(
+            load_snippets(&path).unwrap().is_empty(),
+            "missing file is empty"
+        );
 
         std::fs::write(&path, "this is not valid toml {{{").unwrap();
         assert!(load_snippets(&path).is_err(), "malformed file must error");
@@ -218,11 +224,7 @@ mod tests {
 
     #[test]
     fn test_snippet_expand() {
-        let snippet = Snippet::new(
-            "Test".into(),
-            "!test".into(),
-            "Today is {date}".into(),
-        );
+        let snippet = Snippet::new("Test".into(), "!test".into(), "Today is {date}".into());
         let expanded = snippet.expand(None);
         assert!(expanded.starts_with("Today is "));
     }

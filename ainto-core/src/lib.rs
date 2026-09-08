@@ -3,8 +3,8 @@
 //! This crate compiles to a static library (.a) linked into the Swift frontend via C ABI FFI.
 
 pub mod ai_commands;
-pub mod clipboard_store;
 pub mod claude;
+pub mod clipboard_store;
 pub mod config;
 pub mod discovery;
 pub mod ffi;

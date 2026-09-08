@@ -173,10 +173,8 @@ mod tests {
 
     #[test]
     fn separate_paths_keep_independent_cached_tables_and_resets() {
-        let directory = std::env::temp_dir().join(format!(
-            "ainto-ranking-paths-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let directory =
+            std::env::temp_dir().join(format!("ainto-ranking-paths-{}", uuid::Uuid::new_v4()));
         let first = directory.join("first.toml");
         let second = directory.join("second.toml");
         let key = "app:shared";
@@ -203,10 +201,8 @@ mod tests {
 
     #[test]
     fn concurrent_paths_do_not_share_counts() {
-        let directory = std::env::temp_dir().join(format!(
-            "ainto-ranking-parallel-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let directory =
+            std::env::temp_dir().join(format!("ainto-ranking-parallel-{}", uuid::Uuid::new_v4()));
         std::thread::scope(|scope| {
             for expected in 1..=4 {
                 let path = directory.join(format!("{expected}.toml"));
