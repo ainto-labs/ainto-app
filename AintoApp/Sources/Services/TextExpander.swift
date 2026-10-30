@@ -137,16 +137,16 @@ final class TextExpander {
             if let tap = sharedEventTap {
                 CGEvent.tapEnable(tap: tap, enable: true)
             }
-            return Unmanaged.passRetained(event)
+            return Unmanaged.passUnretained(event)
         }
 
         guard type == .keyDown else {
-            return Unmanaged.passRetained(event)
+            return Unmanaged.passUnretained(event)
         }
 
         // Skip keystroke capture for password managers and secure input fields
         if SecureInput.isActive {
-            return Unmanaged.passRetained(event)
+            return Unmanaged.passUnretained(event)
         }
 
         // Skip if modifier keys are held (Cmd, Ctrl, Alt)
@@ -155,7 +155,7 @@ final class TextExpander {
             lock.lock()
             buffer = ""
             lock.unlock()
-            return Unmanaged.passRetained(event)
+            return Unmanaged.passUnretained(event)
         }
 
         // Get the character
@@ -164,7 +164,7 @@ final class TextExpander {
         event.keyboardGetUnicodeString(maxStringLength: 4, actualStringLength: &length, unicodeString: &chars)
 
         guard length > 0 else {
-            return Unmanaged.passRetained(event)
+            return Unmanaged.passUnretained(event)
         }
 
         let char = String(utf16CodeUnits: chars, count: length)
@@ -185,7 +185,7 @@ final class TextExpander {
                 buffer.removeLast()
             }
             lock.unlock()
-            return Unmanaged.passRetained(event)
+            return Unmanaged.passUnretained(event)
         }
 
         // Append to buffer
@@ -210,7 +210,7 @@ final class TextExpander {
         }
 
         lock.unlock()
-        return Unmanaged.passRetained(event)
+        return Unmanaged.passUnretained(event)
     }
 
     /// Check if the buffer ends with any snippet keyword.
