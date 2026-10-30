@@ -1,6 +1,6 @@
 [package]
 name = "ainto-core"
-version = "0.1.16"
+version = "0.1.17"
 edition = "2024"
 license = "GPL-3.0-or-later"
 
