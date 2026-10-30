@@ -396,7 +396,9 @@ final class SearchViewModel: ObservableObject {
     /// Runs off the main thread so panel appearance isn't blocked.
     func refreshApps() {
         DispatchQueue.global(qos: .userInitiated).async {
-            let _ = rc_discover_apps(false)
+            if let discovered = rc_discover_apps(false) {
+                rc_free_string(discovered)
+            }
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.page == .main else { return }
                 if self.query.isEmpty {
