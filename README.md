@@ -26,6 +26,10 @@
   </a>
 </p>
 
+<p align="center">
+  <img src="https://ainto.app/launcher.jpg" width="800" alt="Ainto's search panel listing apps and built-in commands">
+</p>
+
 ---
 
 ## Features

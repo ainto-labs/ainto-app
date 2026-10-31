@@ -26,6 +26,10 @@
   </a>
 </p>
 
+<p align="center">
+  <img src="https://ainto.app/launcher.jpg" width="800" alt="Ainto 搜尋面板，列出常用 app 與內建指令">
+</p>
+
 ---
 
 ## 功能
