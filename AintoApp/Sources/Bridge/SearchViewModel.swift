@@ -368,6 +368,19 @@ final class SearchViewModel: ObservableObject {
     /// Callback to reload text expander snippets (set by AppDelegate)
     var onSnippetsChanged: (() -> Void)?
 
+    /// Version of an available update the user hasn't acted on yet.
+    @Published var pendingUpdateVersion: String? {
+        didSet {
+            // The "Update Ainto" result only exists in search results.
+            if page == .main && !query.isEmpty {
+                performSearch(query: query)
+            }
+        }
+    }
+
+    /// Callback to bring Sparkle's update alert to the front (set by AppDelegate)
+    var onShowUpdate: (() -> Void)?
+
     var statusText: String {
         switch results.count {
         case 0: return "No results"
@@ -601,6 +614,18 @@ final class SearchViewModel: ObservableObject {
                 self?.goToClipboard()
             }
             commandResults.append(r)
+        }
+
+        if let version = pendingUpdateVersion, fuzzyMatch(q, "update ainto") {
+            commandResults.append(SearchResult(
+                title: "Update Ainto",
+                subtitle: "Version \(version) is available",
+                icon: nil,
+                systemIcon: "arrow.up.circle",
+                score: fuzzyScore(query, "Update Ainto")
+            ) { [weak self] in
+                self?.onShowUpdate?()
+            })
         }
 
         var allResults = appResults + commandResults + snippetResults

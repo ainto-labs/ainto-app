@@ -146,6 +146,15 @@ struct MainView: View {
                     Text(viewModel.statusText)
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
+                } else if let version = viewModel.pendingUpdateVersion {
+                    Button {
+                        viewModel.onShowUpdate?()
+                    } label: {
+                        Label("Ainto \(version) is available", systemImage: "arrow.up.circle.fill")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Color.accentColor)
+                    }
+                    .buttonStyle(.plain)
                 }
                 Spacer()
                 HStack(spacing: 12) {
