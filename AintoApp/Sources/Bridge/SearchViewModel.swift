@@ -1003,9 +1003,6 @@ final class SearchViewModel: ObservableObject {
                     self?.editSelectedAICommand()
                 }
             },
-            ActionItem(title: "Manage AI Commands", icon: "sparkle", shortcut: nil, keepPanel: true) { [weak self] in
-                self?.goToAICommands()
-            },
         ]
     }
 
