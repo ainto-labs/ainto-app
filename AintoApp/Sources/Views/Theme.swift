@@ -49,6 +49,10 @@ enum Theme {
     /// Boxes inside a panel: previews, code blocks, message bubbles, fields.
     static let cardRadius: CGFloat = 10
 
+    /// Fixed height for every page's search or title bar, so moving between
+    /// pages doesn't shift the list below.
+    static let searchBarHeight: CGFloat = 52
+
     // Lists are sized to a whole number of rows and scroll a whole row at a
     // time, so a row is never left half under the header or the footer.
     static let rowSpacing: CGFloat = 2

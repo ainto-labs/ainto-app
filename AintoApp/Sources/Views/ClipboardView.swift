@@ -38,7 +38,7 @@ struct ClipboardView: View {
                     set: { viewModel.clipboardFilter = $0 }
                 ))
                     .textFieldStyle(.plain)
-                    .font(.system(size: 16))
+                    .font(.system(size: 18))
                     .focused($isFilterFocused)
                     .onAppear { isFilterFocused = true }
                     .onChange(of: viewModel.debouncedClipboardFilter) { _, _ in
@@ -73,7 +73,7 @@ struct ClipboardView: View {
                 .fixedSize()
             }
             .padding(.horizontal, 20)
-            .padding(.vertical, 12)
+            .frame(height: Theme.searchBarHeight)
 
             Hairline()
 

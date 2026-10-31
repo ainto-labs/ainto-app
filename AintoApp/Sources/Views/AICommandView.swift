@@ -30,7 +30,7 @@ struct AICommandView: View {
                     Spacer()
                 }
                 .padding(.horizontal, 20)
-                .padding(.vertical, 12)
+                .frame(height: Theme.searchBarHeight)
 
                 Hairline()
 
@@ -51,7 +51,7 @@ struct AICommandView: View {
 
                     TextField("Filter commands...", text: $viewModel.aiCommandFilter)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 16))
+                        .font(.system(size: 18))
                         .focused($isFilterFocused)
                         .onAppear { isFilterFocused = true }
                         .onChange(of: viewModel.aiCommandFilter) { _, _ in
@@ -61,7 +61,7 @@ struct AICommandView: View {
                     Spacer()
                 }
                 .padding(.horizontal, 20)
-                .padding(.vertical, 12)
+                .frame(height: Theme.searchBarHeight)
 
                 Hairline()
 
