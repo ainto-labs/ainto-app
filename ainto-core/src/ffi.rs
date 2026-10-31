@@ -96,7 +96,6 @@ pub extern "C" fn rc_discover_apps(store_icons: bool) -> *const c_char {
                 "path": a.path,
                 "has_icon": a.icon_png.is_some(),
                 "ranking": a.ranking,
-                "is_favourite": a.is_favourite,
             })
         })
         .collect();
@@ -136,7 +135,6 @@ pub extern "C" fn rc_search_apps(query: *const c_char) -> *const c_char {
                         "display_name": a.display_name,
                         "path": a.path,
                         "ranking": a.ranking,
-                        "is_favourite": a.is_favourite,
                     })
                 })
                 .collect::<Vec<_>>()
@@ -399,20 +397,6 @@ pub extern "C" fn rc_clipboard_image_dir() -> *const c_char {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rc_clipboard_get_recent(limit: u64) -> *const c_char {
-    let guard = CLIPBOARD_STORE.lock().ok();
-    let entries = guard
-        .as_ref()
-        .and_then(|opt| opt.as_ref())
-        .and_then(|store| store.get_recent(limit as usize).ok())
-        .unwrap_or_default();
-
-    let json_entries: Vec<serde_json::Value> = entries.iter().map(entry_to_json).collect();
-    let json = serde_json::to_string(&json_entries).unwrap_or_else(|_| "[]".to_string());
-    to_c_string(&json)
-}
-
-#[unsafe(no_mangle)]
 pub extern "C" fn rc_clipboard_get_recent_paged(limit: u64, offset: u64) -> *const c_char {
     let guard = CLIPBOARD_STORE.lock().ok();
     let entries = guard
@@ -424,11 +408,6 @@ pub extern "C" fn rc_clipboard_get_recent_paged(limit: u64, offset: u64) -> *con
     let json_entries: Vec<serde_json::Value> = entries.iter().map(entry_to_json).collect();
     let json = serde_json::to_string(&json_entries).unwrap_or_else(|_| "[]".to_string());
     to_c_string(&json)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rc_clipboard_search(query: *const c_char) -> *const c_char {
-    rc_clipboard_search_paged(query, 50, 0)
 }
 
 #[unsafe(no_mangle)]
@@ -461,20 +440,6 @@ pub extern "C" fn rc_clipboard_delete(id: i64) -> i32 {
         return -1;
     };
     match store.delete(id) {
-        Ok(()) => 0,
-        Err(_) => -1,
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rc_clipboard_clear() -> i32 {
-    let Ok(mut guard) = CLIPBOARD_STORE.lock() else {
-        return -1;
-    };
-    let Some(ref mut store) = *guard else {
-        return -1;
-    };
-    match store.clear() {
         Ok(()) => 0,
         Err(_) => -1,
     }
@@ -613,15 +578,6 @@ pub extern "C" fn rc_claude_next_chunk(session: *mut std::ffi::c_void) -> *const
         Some(text) => to_c_string(&text),
         None => ptr::null(),
     }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rc_claude_get_response(session: *mut std::ffi::c_void) -> *const c_char {
-    if session.is_null() {
-        return to_c_string("");
-    }
-    let session = unsafe { &*(session as *const ClaudeSession) };
-    to_c_string(&session.response)
 }
 
 #[unsafe(no_mangle)]

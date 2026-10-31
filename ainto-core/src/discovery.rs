@@ -258,7 +258,6 @@ fn query_app(path: &Path, store_icons: bool) -> Option<AppEntry> {
         bundle_id,
         icon_png,
         ranking: 0,
-        is_favourite: false,
     })
 }
 

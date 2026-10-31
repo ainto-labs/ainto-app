@@ -362,13 +362,6 @@ struct ClipboardPreview: View {
     private func appName(from bundleId: String) -> String {
         bundleId.components(separatedBy: ".").last ?? bundleId
     }
-
-    private func formatBytes(_ bytes: UInt64) -> String {
-        let kb = Double(bytes) / 1024
-        if kb < 1024 { return String(format: "%.1f KB", kb) }
-        let mb = kb / 1024
-        return String(format: "%.1f MB", mb)
-    }
 }
 
 /// Holds preview metadata loaded off the main thread.

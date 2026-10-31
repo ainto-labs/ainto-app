@@ -27,12 +27,6 @@ pub enum Error {
     #[error("TOML serialize error: {0}")]
     TomlSerialize(#[from] toml::ser::Error),
 
-    #[error("Image encode error")]
-    ImageEncode,
-
-    #[error("Image error: {0}")]
-    Image(#[from] image::ImageError),
-
     #[error("HOME directory not found")]
     NoHomeDir,
 

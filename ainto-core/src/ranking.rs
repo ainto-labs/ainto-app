@@ -65,31 +65,8 @@ pub struct RankingFile {
 pub fn load_rankings(path: &Path) -> HashMap<String, RankingEntry> {
     std::fs::read_to_string(path)
         .ok()
-        .and_then(|content| {
-            // Try new format first
-            if let Ok(file) = toml::from_str::<RankingFile>(&content) {
-                return Some(file.rankings);
-            }
-            // Migrate from old format: key = i32
-            if let Ok(old) = toml::from_str::<HashMap<String, i32>>(&content) {
-                let migrated: HashMap<String, RankingEntry> = old
-                    .into_iter()
-                    .map(|(k, v)| {
-                        (
-                            k,
-                            RankingEntry {
-                                count: v,
-                                last_used: now(),
-                            },
-                        )
-                    })
-                    .collect();
-                // Write back in new format
-                let _ = save_rankings(path, &migrated);
-                return Some(migrated);
-            }
-            None
-        })
+        .and_then(|content| toml::from_str::<RankingFile>(&content).ok())
+        .map(|file| file.rankings)
         .unwrap_or_default()
 }
 

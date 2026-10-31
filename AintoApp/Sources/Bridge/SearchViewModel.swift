@@ -1046,10 +1046,6 @@ final class SearchViewModel: ObservableObject {
         }
     }
 
-    func toggleActionPanel() {
-        showActionPanel = !currentActions.isEmpty && !showActionPanel
-    }
-
     /// App-specific actions.
     static func appActions(path: String) -> [ActionItem] {
         [
