@@ -36,7 +36,7 @@
 
 | Feature | Description |
 |---------|-------------|
-| **AI** | Press Tab to chat, or select text → run & replace (Fix Grammar, Translate, Summarize, or your own) |
+| **AI** | Press <kbd>Tab</kbd> to chat, or select text → run & replace (Fix Grammar, Translate, Summarize, or your own) |
 | **App Search** | Fuzzy search and launch macOS apps instantly |
 | **Clipboard History** | Persistent history with text, image, and file support |
 | **Snippets** | Text expansion in any app with dynamic placeholders (`{date}`, `{clipboard}`, `{time}`, `{uuid}`) |
