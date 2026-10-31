@@ -31,7 +31,7 @@ struct SnippetView: View {
                     Spacer()
                 }
                 .padding(.horizontal, 20)
-                .padding(.vertical, 12)
+                .frame(height: Theme.searchBarHeight)
 
                 Hairline()
 
@@ -52,7 +52,7 @@ struct SnippetView: View {
 
                     TextField("Filter snippets...", text: $viewModel.snippetFilter)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 16))
+                        .font(.system(size: 18))
                         .focused($isFilterFocused)
                         .onAppear { isFilterFocused = true }
                         .onChange(of: viewModel.snippetFilter) { _, _ in
@@ -62,7 +62,7 @@ struct SnippetView: View {
                     Spacer()
                 }
                 .padding(.horizontal, 20)
-                .padding(.vertical, 12)
+                .frame(height: Theme.searchBarHeight)
 
                 Hairline()
 

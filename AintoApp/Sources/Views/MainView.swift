@@ -71,7 +71,7 @@ struct MainView: View {
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.vertical, 14)
+            .frame(height: Theme.searchBarHeight)
             .onAppear {
                 viewModel.focusFilterField()
             }
