@@ -140,8 +140,10 @@ struct MainView: View {
                 }
                 Spacer()
                 HStack(spacing: 12) {
-                    if !viewModel.results.isEmpty && viewModel.searchMode == .apps {
+                    if !viewModel.currentActions.isEmpty && viewModel.searchMode == .apps {
                         KeyHint(keys: ["⌘", "K"], label: "actions")
+                    }
+                    if !viewModel.results.isEmpty && viewModel.searchMode == .apps {
                         KeyHint(keys: ["↑", "↓"], label: "navigate")
                         KeyHint(keys: ["↵"], label: "open")
                     }
