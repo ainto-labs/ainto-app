@@ -6,6 +6,20 @@
     <description>Most recent updates to Ainto</description>
     <language>en</language>
     <item>
+      <title>Version 0.2.0</title>
+      <pubDate>Sat, 31 Oct 2026 13:20:55 +0000</pubDate>
+      <sparkle:version>200</sparkle:version>
+      <sparkle:shortVersionString>0.2.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<a href="https://github.com/ainto-labs/ainto-app/releases/tag/v0.2.0">View release notes</a>]]></description>
+      <enclosure
+        url="https://github.com/ainto-labs/ainto-app/releases/download/v0.2.0/Ainto.dmg"
+        length="4657541"
+        type="application/octet-stream"
+        sparkle:edSignature="WDM5kAD37/lVro4aEgf6aSdqfipIZ2OYEj3Q3a5CMV6xgnCwHmygjJizShjhfX+gUR90U+bTRkCHvdEEjbyfCg=="
+      />
+    </item>
+    <item>
       <title>Version 0.1.17</title>
       <pubDate>Fri, 30 Oct 2026 04:12:14 +0000</pubDate>
       <sparkle:version>117</sparkle:version>
