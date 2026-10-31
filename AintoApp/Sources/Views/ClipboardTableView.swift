@@ -5,9 +5,6 @@ import SwiftUI
 /// Replaces SwiftUI LazyVStack to eliminate re-render overhead on selection changes.
 struct ClipboardTableView: NSViewRepresentable {
     let items: [ClipboardItem]
-    let groupedItems: [String: [ClipboardItem]]
-    let groupedKeys: [String]
-    let indexMap: [Int64: Int]
     @Binding var selectedIndex: Int
     var onSelectionChanged: ((Int) -> Void)?
     var onDoubleClick: () -> Void
@@ -23,8 +20,14 @@ struct ClipboardTableView: NSViewRepresentable {
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true
+        // Overlay scrollers never draw a track, even with "Show scroll bars: Always".
+        scrollView.scrollerStyle = .overlay
         scrollView.drawsBackground = false
         scrollView.automaticallyAdjustsContentInsets = false
+        // The highlight sits 1pt inside each row, so these leave rowInset
+        // between it and the list's top and bottom, like the SwiftUI lists.
+        let margin = Theme.rowInset - Theme.rowSpacing / 2
+        scrollView.contentInsets = NSEdgeInsets(top: margin, left: 0, bottom: margin, right: 0)
 
         let tableView = NSTableView()
         tableView.backgroundColor = .clear
@@ -32,7 +35,7 @@ struct ClipboardTableView: NSViewRepresentable {
         tableView.style = .plain
         tableView.selectionHighlightStyle = .none // We draw our own highlight
         tableView.intercellSpacing = NSSize(width: 0, height: 0)
-        tableView.rowHeight = 44
+        tableView.rowHeight = Theme.clipboardRowHeight
         tableView.usesAutomaticRowHeights = false
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("item"))
@@ -59,6 +62,11 @@ struct ClipboardTableView: NSViewRepresentable {
 
         // Register callback so arrow keys bypass SwiftUI and move NSTableView directly
         let coordinator = context.coordinator
+        // Once the table has laid out, start on a row boundary below the top inset.
+        let initialIndex = selectedIndex
+        DispatchQueue.main.async {
+            coordinator.scrollToKeepVisible(initialIndex)
+        }
         viewModel.onClipboardSelectionMove = { [weak coordinator] newIndex in
             coordinator?.moveToIndex(newIndex)
         }
@@ -91,11 +99,10 @@ struct ClipboardTableView: NSViewRepresentable {
             } else {
                 tableView.reloadData()
                 // After a reset (filter/delete), sync selection into view
-                let row = coordinator.flatRow(for: selectedIndex)
-                if row >= 0 {
+                if selectedIndex < items.count {
                     coordinator.suppressSelectionCallback = true
-                    tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
-                    tableView.scrollRowToVisible(row)
+                    tableView.selectRowIndexes(IndexSet(integer: selectedIndex), byExtendingSelection: false)
+                    coordinator.scrollToKeepVisible(selectedIndex)
                     coordinator.suppressSelectionCallback = false
                 }
             }
@@ -104,105 +111,41 @@ struct ClipboardTableView: NSViewRepresentable {
         // not through SwiftUI updateNSView, to avoid re-render overhead.
     }
 
-    // MARK: - Flat row model
-
-    /// Each row in the table is either a group header or an item.
-    enum FlatRow {
-        case header(String)
-        case item(ClipboardItem, Int) // item + global index
-    }
-
     @MainActor
     class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         var parent: ClipboardTableView
         weak var tableView: NSTableView?
         var suppressSelectionCallback = false
-        private var flatRows: [FlatRow] = []
 
         init(_ parent: ClipboardTableView) {
             self.parent = parent
             super.init()
-            rebuildFlatRows()
-        }
-
-        func rebuildFlatRows() {
-            var rows: [FlatRow] = []
-            for key in parent.groupedKeys {
-                rows.append(.header(key))
-                if let items = parent.groupedItems[key] {
-                    for item in items {
-                        let globalIdx = parent.indexMap[item.id] ?? 0
-                        rows.append(.item(item, globalIdx))
-                    }
-                }
-            }
-            flatRows = rows
-        }
-
-        /// Convert a global item index to a flat table row index.
-        func flatRow(for globalIndex: Int) -> Int {
-            guard globalIndex < parent.items.count else { return -1 }
-            let targetId = parent.items[globalIndex].id
-            return flatRows.firstIndex(where: {
-                if case .item(let item, _) = $0 { return item.id == targetId }
-                return false
-            }) ?? -1
         }
 
         // MARK: - DataSource
 
         func numberOfRows(in tableView: NSTableView) -> Int {
-            rebuildFlatRows()
-            return flatRows.count
+            parent.items.count
         }
 
         // MARK: - Delegate
 
         func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-            guard row < flatRows.count else { return nil }
-
-            switch flatRows[row] {
-            case .header(let title):
-                return makeHeaderView(title: title, tableView: tableView)
-            case .item(let item, let globalIndex):
-                let isSelected = globalIndex == parent.selectedIndex
-                return makeItemView(item: item, isSelected: isSelected, tableView: tableView)
-            }
-        }
-
-        func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-            guard row < flatRows.count else { return 44 }
-            switch flatRows[row] {
-            case .header: return 24
-            case .item: return 44
-            }
-        }
-
-        func tableView(_ tableView: NSTableView, isGroupRow row: Int) -> Bool {
-            guard row < flatRows.count else { return false }
-            if case .header = flatRows[row] { return true }
-            return false
-        }
-
-        func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
-            guard row < flatRows.count else { return false }
-            if case .header = flatRows[row] { return false }
-            return true
+            guard row < parent.items.count else { return nil }
+            return makeItemView(item: parent.items[row], isSelected: row == parent.selectedIndex, tableView: tableView)
         }
 
         func tableViewSelectionDidChange(_ notification: Notification) {
             guard !suppressSelectionCallback else { return }
             let row = tableView?.selectedRow ?? -1
-            guard row >= 0, row < flatRows.count else { return }
-            if case .item(_, let globalIndex) = flatRows[row] {
-                parent.selectedIndex = globalIndex
-                // Mouse clicks change the selection through here (arrow keys go
-                // through moveToIndex). The native selection highlight is disabled,
-                // so update our custom highlight box ourselves, or a click leaves
-                // no visible selection.
-                refreshVisibleHighlights(selectedRow: row)
-                parent.onSelectionChanged?(globalIndex)
-            }
+            guard row >= 0, row < parent.items.count else { return }
+            parent.selectedIndex = row
+            // Mouse clicks change the selection through here (arrow keys go
+            // through moveToIndex). The native selection highlight is disabled,
+            // so update our custom highlight box ourselves, or a click leaves
+            // no visible selection.
+            refreshVisibleHighlights(selectedRow: row)
+            parent.onSelectionChanged?(row)
         }
 
         /// Repaint the custom highlight on the visible cells so exactly the
@@ -218,39 +161,51 @@ struct ClipboardTableView: NSViewRepresentable {
             }
         }
 
-        /// Move selection directly in NSTableView — called from ViewModel.moveSelection
-        /// via callback, bypassing SwiftUI entirely.
-        func moveToIndex(_ globalIndex: Int) {
-            guard let tableView else { return }
-            let row = flatRow(for: globalIndex)
-            guard row >= 0 else { return }
+        /// Move selection directly in NSTableView, called from
+        /// ViewModel.moveSelection via callback, bypassing SwiftUI entirely.
+        func moveToIndex(_ row: Int) {
+            guard let tableView, row < parent.items.count else { return }
 
-            // First move: selectedRow is -1, fall back to row for index 0
-            let previousRow = tableView.selectedRow >= 0
-                ? tableView.selectedRow
-                : flatRow(for: 0)
+            // First move: selectedRow is -1, fall back to row 0
+            let previousRow = max(tableView.selectedRow, 0)
             suppressSelectionCallback = true
             tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
-            tableView.scrollRowToVisible(row)
+            scrollToKeepVisible(row)
             suppressSelectionCallback = false
 
-            // Update highlight only — no reloadData (avoids displayImage I/O)
-            if previousRow >= 0, let cell = tableView.view(atColumn: 0, row: previousRow, makeIfNecessary: false) as? ClipboardCellView {
+            // Update highlight only, no reloadData (avoids displayImage I/O)
+            if let cell = tableView.view(atColumn: 0, row: previousRow, makeIfNecessary: false) as? ClipboardCellView {
                 cell.updateHighlight(isSelected: false)
             }
             if let cell = tableView.view(atColumn: 0, row: row, makeIfNecessary: false) as? ClipboardCellView {
                 cell.updateHighlight(isSelected: true)
             }
 
-            parent.onSelectionChanged?(globalIndex)
+            parent.onSelectionChanged?(row)
 
             // Trigger load-more when near bottom (within 5 items)
-            if globalIndex >= parent.items.count - 5 {
+            if row >= parent.items.count - 5 {
                 parent.onScrolledNearBottom?()
             }
         }
 
-        /// Mouse/trackpad scroll handler — load the next page when the visible
+        /// Scrolls a whole row at a time, and only once `row` leaves the
+        /// visible window, matching the SwiftUI lists. Also snaps back to a
+        /// row boundary, since the list opens, and a trackpad can leave it,
+        /// partway through a row.
+        func scrollToKeepVisible(_ row: Int) {
+            guard let tableView, let scrollView = tableView.enclosingScrollView else { return }
+            let clip = scrollView.contentView
+            let topInset = scrollView.contentInsets.top
+            let firstVisible = max(0, Int(((clip.bounds.minY + topInset) / tableView.rowHeight).rounded()))
+            let first = Theme.firstVisibleRow(keeping: row, from: firstVisible) ?? firstVisible
+            let target = NSPoint(x: 0, y: CGFloat(first) * tableView.rowHeight - topInset)
+            guard clip.bounds.origin != target else { return }
+            clip.scroll(to: target)
+            scrollView.reflectScrolledClipView(clip)
+        }
+
+        /// Mouse/trackpad scroll handler: load the next page when the visible
         /// area nears the bottom (within ~2 rows). loadMoreClipboardItems guards
         /// on clipboardHasMore, so firing repeatedly is harmless.
         @objc func clipViewBoundsDidChange(_ notification: Notification) {
@@ -258,7 +213,7 @@ struct ClipboardTableView: NSViewRepresentable {
                   let documentView = clipView.documentView else { return }
             let contentHeight = documentView.bounds.height
             guard contentHeight > 0 else { return }
-            let threshold = (tableView?.rowHeight ?? 44) * 2
+            let threshold = (tableView?.rowHeight ?? Theme.clipboardRowHeight) * 2
             if clipView.bounds.maxY >= contentHeight - threshold {
                 parent.onScrolledNearBottom?()
             }
@@ -270,27 +225,12 @@ struct ClipboardTableView: NSViewRepresentable {
 
         @objc func handleDoubleClick(_ sender: NSTableView) {
             let row = sender.clickedRow
-            guard row >= 0, row < flatRows.count else { return }
-            if case .item(_, let globalIndex) = flatRows[row] {
-                parent.selectedIndex = globalIndex
-                parent.onDoubleClick()
-            }
+            guard row >= 0, row < parent.items.count else { return }
+            parent.selectedIndex = row
+            parent.onDoubleClick()
         }
 
         // MARK: - Cell views
-
-        private func makeHeaderView(title: String, tableView: NSTableView) -> NSView {
-            let id = NSUserInterfaceItemIdentifier("header")
-            if let reused = tableView.makeView(withIdentifier: id, owner: nil) as? NSTextField {
-                reused.stringValue = title
-                return reused
-            }
-            let label = NSTextField(labelWithString: title)
-            label.identifier = id
-            label.font = .systemFont(ofSize: 11, weight: .semibold)
-            label.textColor = .secondaryLabelColor
-            return label
-        }
 
         private func makeItemView(item: ClipboardItem, isSelected: Bool, tableView: NSTableView) -> NSView {
             let id = NSUserInterfaceItemIdentifier("clipItem")
@@ -330,7 +270,7 @@ final class ClipboardCellView: NSView {
     private func setup() {
         // Background highlight
         backgroundBox.boxType = .custom
-        backgroundBox.cornerRadius = 8
+        backgroundBox.cornerRadius = Theme.rowRadius
         backgroundBox.borderWidth = 0
         backgroundBox.fillColor = .clear
         backgroundBox.translatesAutoresizingMaskIntoConstraints = false
@@ -343,7 +283,7 @@ final class ClipboardCellView: NSView {
         iconView.layer?.masksToBounds = true
         addSubview(iconView)
 
-        titleLabel.font = .systemFont(ofSize: 13)
+        titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.maximumNumberOfLines = 1
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -356,12 +296,12 @@ final class ClipboardCellView: NSView {
         addSubview(subtitleLabel)
 
         NSLayoutConstraint.activate([
-            backgroundBox.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
-            backgroundBox.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
+            backgroundBox.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Theme.rowInset),
+            backgroundBox.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Theme.rowInset),
             backgroundBox.topAnchor.constraint(equalTo: topAnchor, constant: 1),
             backgroundBox.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -1),
 
-            iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Theme.rowInset + 10),
             iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
             iconView.widthAnchor.constraint(equalToConstant: 28),
             iconView.heightAnchor.constraint(equalToConstant: 28),
@@ -404,15 +344,16 @@ final class ClipboardCellView: NSView {
         updateHighlight(isSelected: isSelected)
     }
 
-    /// Update only colors/highlight — no image reload.
+    /// Updates only colors and the highlight, never the image. Matches the SwiftUI
+    /// `SelectionBackground` in Theme.swift.
     func updateHighlight(isSelected: Bool) {
         if isSymbolIcon {
-            iconView.contentTintColor = isSelected ? .white : .secondaryLabelColor
+            iconView.contentTintColor = .secondaryLabelColor
         }
-        titleLabel.textColor = isSelected ? .white : .labelColor
-        subtitleLabel.textColor = isSelected ? .white.withAlphaComponent(0.7) : .gray
-        backgroundBox.fillColor = isSelected
-            ? NSColor.controlAccentColor.withAlphaComponent(0.85)
-            : .clear
+        titleLabel.textColor = .labelColor
+        subtitleLabel.textColor = .secondaryLabelColor
+        backgroundBox.fillColor = isSelected ? Theme.nsSelectionFill : .clear
+        backgroundBox.borderColor = Theme.nsSelectionStroke
+        backgroundBox.borderWidth = isSelected ? 0.5 : 0
     }
 }

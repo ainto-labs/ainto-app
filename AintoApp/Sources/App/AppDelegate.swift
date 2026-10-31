@@ -242,8 +242,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.backgroundColor = .clear
 
         // Glassmorphism: add visual effect view behind the hosting view
-        let visualEffect = NSVisualEffectView()
-        visualEffect.material = .hudWindow
+        let visualEffect = PanelEffectView()
         visualEffect.blendingMode = .behindWindow
         visualEffect.state = .active
         visualEffect.translatesAutoresizingMaskIntoConstraints = false

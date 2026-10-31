@@ -67,7 +67,7 @@ struct ClipboardView: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(Color.primary.opacity(0.08))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
@@ -75,7 +75,7 @@ struct ClipboardView: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
 
-            Divider().opacity(0.5)
+            Hairline()
 
             if viewModel.filteredClipboardItems.isEmpty {
                 VStack(spacing: 8) {
@@ -93,18 +93,14 @@ struct ClipboardView: View {
                     // Left: grouped item list (NSTableView for cell reuse + native selection)
                     ClipboardTableView(
                         items: viewModel.filteredClipboardItems,
-                        groupedItems: viewModel.clipboardGroupedItems,
-                        groupedKeys: viewModel.clipboardGroupedKeys,
-                        indexMap: viewModel.clipboardIndexMap,
                         selectedIndex: $viewModel.clipboardSelectedIndex,
                         onSelectionChanged: { _ in schedulePreviewUpdate() },
                         onDoubleClick: { viewModel.openSelected() },
                         onScrolledNearBottom: { viewModel.loadMoreClipboardItems() },
                         viewModel: viewModel
                     )
+                    .clipToListMargins()
                     .frame(width: 300)
-
-                    Divider().opacity(0.3)
 
                     // Right: preview (debounced to avoid file I/O lag during rapid navigation)
                     ClipboardPreview(
@@ -112,8 +108,9 @@ struct ClipboardView: View {
                         onDelete: { id in viewModel.deleteClipboardItem(id: id) }
                     )
                     .frame(maxWidth: .infinity)
+                    .paneBackground()
                 }
-                .frame(height: 360)
+                .frame(height: Theme.splitListHeight)
                 .onAppear { previewItem = selectedItem }
                 // The list can change under a fixed selection index — e.g. a new
                 // clipboard item is inserted at the top — so the selected item's
@@ -127,7 +124,6 @@ struct ClipboardView: View {
             }
 
             // Footer
-            Divider().opacity(0.3)
             HStack {
                 Spacer()
                 HStack(spacing: 12) {
@@ -138,6 +134,7 @@ struct ClipboardView: View {
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 8)
+            .barBackground()
         }
         .frame(width: 680)
     }
@@ -184,7 +181,7 @@ struct ClipboardPreview: View {
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                                .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
                                 .padding(12)
                         } else {
                             Image(systemName: "photo")
@@ -224,7 +221,7 @@ struct ClipboardPreview: View {
                     }
                 }
 
-                Divider().opacity(0.3)
+                Hairline(inset: 12)
 
                 // Information
                 VStack(alignment: .leading, spacing: 6) {
@@ -261,7 +258,7 @@ struct ClipboardPreview: View {
                 }
                 .padding(12)
 
-                Divider().opacity(0.3)
+                Hairline(inset: 12)
 
                 HStack {
                     Spacer()

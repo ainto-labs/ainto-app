@@ -233,13 +233,6 @@ struct ClipboardItem: Identifiable {
         return "\(Int(interval / 86400))d ago"
     }
 
-    /// Time group for section headers.
-    var timeGroup: String {
-        let cal = Calendar.current
-        if cal.isDateInToday(date) { return "Today" }
-        if cal.isDateInYesterday(date) { return "Yesterday" }
-        return "Earlier"
-    }
 
     /// Full image path on disk.
     var imagePath: String? {
@@ -743,12 +736,9 @@ final class SearchViewModel: ObservableObject {
         }
     }
 
-    /// Cached filtered result + derived data — recalculated only when filter
-    /// inputs change, not on every SwiftUI body evaluation.
+    /// Cached filtered result, recalculated only when filter inputs change,
+    /// not on every SwiftUI body evaluation.
     @Published private(set) var filteredClipboardItems: [ClipboardItem] = []
-    private(set) var clipboardGroupedItems: [String: [ClipboardItem]] = [:]
-    private(set) var clipboardGroupedKeys: [String] = []
-    private(set) var clipboardIndexMap: [Int64: Int] = [:]
 
     private func rebuildFilteredClipboardItems() {
         var items = clipboardItems
@@ -762,13 +752,6 @@ final class SearchViewModel: ObservableObject {
         }
 
         filteredClipboardItems = items
-
-        // Rebuild derived data (used by ClipboardView)
-        let grouped = Dictionary(grouping: items) { $0.timeGroup }
-        clipboardGroupedItems = grouped
-        let order = ["Today": 0, "Yesterday": 1, "Earlier": 2]
-        clipboardGroupedKeys = grouped.keys.sorted { (order[$0] ?? 3) < (order[$1] ?? 3) }
-        clipboardIndexMap = Dictionary(uniqueKeysWithValues: items.enumerated().map { ($1.id, $0) })
     }
 
     func pasteSelectedClipboardItem() {

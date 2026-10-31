@@ -4,6 +4,8 @@ import AppKit
 /// AI Commands management sub-page — mirrors SnippetView layout.
 struct AICommandView: View {
     @ObservedObject var viewModel: SearchViewModel
+    /// Top row of the visible window of the list.
+    @State private var firstVisibleCommand = 0
     @FocusState private var isFilterFocused: Bool
 
     var body: some View {
@@ -30,7 +32,7 @@ struct AICommandView: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
 
-                Divider().opacity(0.5)
+                Hairline()
 
                 AICommandEditForm(viewModel: viewModel)
             } else {
@@ -61,7 +63,7 @@ struct AICommandView: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
 
-                Divider().opacity(0.5)
+                Hairline()
 
                 if viewModel.filteredAICommands.isEmpty {
                     VStack(spacing: 8) {
@@ -81,8 +83,8 @@ struct AICommandView: View {
                     HStack(spacing: 0) {
                         // Left: command list
                         ScrollViewReader { proxy in
-                            ScrollView {
-                                VStack(spacing: 2) {
+                            ScrollView(showsIndicators: false) {
+                                VStack(spacing: Theme.rowSpacing) {
                                     ForEach(Array(viewModel.filteredAICommands.enumerated()), id: \.element.id) { index, command in
                                         AICommandItemRow(
                                             command: command,
@@ -98,18 +100,22 @@ struct AICommandView: View {
                                         }
                                     }
                                 }
-                                .padding(.vertical, 4)
                             }
+                            .contentMargins(.vertical, Theme.rowInset, for: .scrollContent)
+                            .clipToListMargins()
                             .onChange(of: viewModel.aiCommandSelectedIndex) { _, newIndex in
                                 let items = viewModel.filteredAICommands
-                                if newIndex < items.count {
-                                    proxy.scrollTo(items[newIndex].id)
-                                }
+                                guard newIndex < items.count,
+                                      let first = Theme.firstVisibleRow(keeping: newIndex, from: firstVisibleCommand)
+                                else { return }
+                                firstVisibleCommand = first
+                                proxy.scrollTo(items[first].id, anchor: .top)
+                            }
+                            .onChange(of: viewModel.filteredAICommands.first?.id) { _, _ in
+                                firstVisibleCommand = 0
                             }
                         }
                         .frame(width: 280)
-
-                        Divider().opacity(0.3)
 
                         // Right: preview
                         AICommandPreview(
@@ -118,13 +124,13 @@ struct AICommandView: View {
                             onDelete: { id in viewModel.deleteAICommand(id: id) }
                         )
                         .frame(maxWidth: .infinity)
+                        .paneBackground()
                     }
-                    .frame(height: 360)
+                    .frame(height: Theme.splitListHeight)
                 }
             }
 
             // Footer
-            Divider().opacity(0.3)
             HStack {
                 Spacer()
                 HStack(spacing: 12) {
@@ -141,6 +147,7 @@ struct AICommandView: View {
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 8)
+            .barBackground()
         }
         .frame(width: 680)
     }
@@ -166,30 +173,29 @@ struct AICommandItemRow: View {
         HStack(spacing: 10) {
             Image(systemName: command.icon)
                 .frame(width: 24, height: 24)
-                .foregroundStyle(isSelected ? .white : .secondary)
+                .foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(command.name.isEmpty ? "Untitled" : command.name)
-                    .font(.system(size: 13))
-                    .foregroundColor(isSelected ? .white : .primary)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
                 Text(command.prompt.components(separatedBy: .newlines).last?.trimmingCharacters(in: .whitespaces).prefix(50) ?? "")
                     .font(.system(size: 11))
-                    .foregroundColor(isSelected ? .white.opacity(0.7) : .gray)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
 
             Spacer()
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 10)
+        .frame(height: Theme.listRowHeight)
         .background {
             if isSelected {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.accentColor.opacity(0.85))
+                SelectionBackground()
             }
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, Theme.rowInset)
         .contentShape(Rectangle())
     }
 }
@@ -213,7 +219,7 @@ struct AICommandPreview: View {
                         .textSelection(.enabled)
                 }
 
-                Divider().opacity(0.3)
+                Hairline(inset: 12)
 
                 // Info
                 VStack(alignment: .leading, spacing: 6) {
@@ -229,7 +235,7 @@ struct AICommandPreview: View {
                 }
                 .padding(12)
 
-                Divider().opacity(0.3)
+                Hairline(inset: 12)
 
                 // Actions
                 HStack {
@@ -281,7 +287,7 @@ struct AICommandEditForm: View {
                             .padding(.horizontal, 10)
                             .padding(.vertical, 8)
                             .background(Color.primary.opacity(0.06))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
                     }
                     .onAppear {
                         viewModel.focusFilterField()
@@ -295,7 +301,7 @@ struct AICommandEditForm: View {
                             .padding(.horizontal, 10)
                             .padding(.vertical, 8)
                             .background(Color.primary.opacity(0.06))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
                     }
 
                     // Prompt
@@ -307,7 +313,7 @@ struct AICommandEditForm: View {
                                 .padding(8)
                                 .frame(minHeight: 160)
                                 .background(Color.primary.opacity(0.06))
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
 
                             Text("Use `{selection}` as placeholder for the selected text from the frontmost app.")
                                 .font(.system(size: 11))

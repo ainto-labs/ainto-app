@@ -129,7 +129,7 @@ struct SettingsView: View {
                         }
                     }
 
-                    Divider().opacity(0.3)
+                    Hairline(inset: 0)
 
                     SettingsRow(label: "Launch at login") {
                         Toggle("", isOn: $launchAtLogin)
@@ -171,7 +171,7 @@ struct SettingsView: View {
                         }
                     }
 
-                    Divider().opacity(0.3)
+                    Hairline(inset: 0)
 
                     SettingsRow(label: "Max image items") {
                         HStack(spacing: 6) {
@@ -184,7 +184,7 @@ struct SettingsView: View {
                         }
                     }
 
-                    Divider().opacity(0.3)
+                    Hairline(inset: 0)
 
                     SettingsRow(label: "Image storage") {
                         TextField("", text: $clipboardImagePath)
@@ -193,7 +193,7 @@ struct SettingsView: View {
                             .padding(.horizontal, 8)
                             .padding(.vertical, 5)
                             .background(Color.primary.opacity(0.06))
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
                             .frame(maxWidth: 220)
                     }
                 }
@@ -240,7 +240,7 @@ struct SettingsView: View {
                             .padding(.horizontal, 8)
                             .padding(.vertical, 5)
                             .background(Color.primary.opacity(0.06))
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
                             .frame(maxWidth: 220)
                     }
                 }
@@ -301,7 +301,7 @@ struct SettingsView: View {
                         Toggle("", isOn: $snippetsEnabled).labelsHidden().toggleStyle(.switch)
                     }
 
-                    Divider().opacity(0.3)
+                    Hairline(inset: 0)
 
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
@@ -356,7 +356,7 @@ struct SettingsView: View {
                         .foregroundColor(.accentColor)
                     }
 
-                    Divider().opacity(0.3)
+                    Hairline(inset: 0)
 
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
@@ -545,7 +545,7 @@ struct SettingsCard<Content: View>: View {
         content()
             .padding(16)
             .background(Color.primary.opacity(0.04))
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
     }
 }
 
@@ -574,7 +574,7 @@ struct SettingsHint: View {
         }
         .padding(10)
         .background(color.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
     }
 }
 
@@ -596,8 +596,7 @@ struct SidebarItem: View {
         .padding(.vertical, 7)
         .background {
             if isSelected {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.accentColor.opacity(0.2))
+                SelectionBackground(radius: Theme.cardRadius)
             }
         }
         .foregroundStyle(isSelected ? .primary : .secondary)
@@ -629,12 +628,7 @@ struct HotkeyPicker: View {
         Button(action: { showPopover.toggle() }) {
             HStack(spacing: 4) {
                 ForEach(selected.split(separator: " ").map(String.init), id: \.self) { key in
-                    Text(key)
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(Color.primary.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                    Keycap(key: key, fontSize: 12)
                 }
                 Image(systemName: "chevron.down")
                     .font(.system(size: 8))
@@ -644,7 +638,7 @@ struct HotkeyPicker: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(Color.primary.opacity(0.04))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
         }
         .buttonStyle(.plain)
         .popover(isPresented: $showPopover, arrowEdge: .bottom) {
@@ -657,12 +651,7 @@ struct HotkeyPicker: View {
                     }) {
                         HStack(spacing: 4) {
                             ForEach(option.split(separator: " ").map(String.init), id: \.self) { key in
-                                Text(key)
-                                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 3)
-                                    .background(Color.primary.opacity(option == selected ? 0.15 : 0.06))
-                                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                                Keycap(key: key, fontSize: 12)
                             }
                             Spacer()
                             if option == selected {
@@ -673,6 +662,11 @@ struct HotkeyPicker: View {
                         }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
+                        .background {
+                            if option == selected {
+                                SelectionBackground(radius: Theme.cardRadius)
+                            }
+                        }
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -725,7 +719,7 @@ struct AboutButton: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
             .background(Color.primary.opacity(0.08))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
         }
         .buttonStyle(.plain)
     }
