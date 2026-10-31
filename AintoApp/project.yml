@@ -35,7 +35,7 @@ packages:
     from: "0.2.1"
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
-    from: "2.0.0"
+    from: "2.2.0"
 
 targets:
   AintoApp:

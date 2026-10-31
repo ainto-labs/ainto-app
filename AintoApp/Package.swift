@@ -47,5 +47,5 @@ package.dependencies.append(
 
 // Sparkle auto-update framework
 package.dependencies.append(
-    .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.0.0")
+    .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.2.0")
 )

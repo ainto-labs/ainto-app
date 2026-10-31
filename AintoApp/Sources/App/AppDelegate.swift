@@ -17,6 +17,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var configDirectoryWatcher: DispatchSourceFileSystemObject?
 
     private var updaterController: SPUStandardUpdaterController?
+    /// Sparkle holds its user driver delegate weakly.
+    private let updateReminder = UpdateReminder()
 
     var updater: SPUUpdater? {
         updaterController?.updater
@@ -29,8 +31,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updaterController = SPUStandardUpdaterController(
             startingUpdater: true,
             updaterDelegate: nil,
-            userDriverDelegate: nil
+            userDriverDelegate: updateReminder
         )
+    }
+
+    /// Hide the panel first: Sparkle activates the app and brings its update
+    /// alert to the front, which the floating panel would otherwise cover.
+    private func showPendingUpdate() {
+        searchPanel?.hidePanel()
+        updater?.checkForUpdates()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -70,9 +79,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applySnippetsEnabled()
 
         // Set up tray icon
-        trayManager = TrayManager(hotkeyManager: hotkeyManager, onSettings: { [weak self] in
-            self?.openSettings()
-        })
+        trayManager = TrayManager(
+            hotkeyManager: hotkeyManager,
+            onSettings: { [weak self] in self?.openSettings() },
+            onShowUpdate: { [weak self] in self?.showPendingUpdate() }
+        )
+
+        searchPanel?.viewModel.onShowUpdate = { [weak self] in
+            self?.showPendingUpdate()
+        }
+        updateReminder.onChange = { [weak self] version in
+            self?.searchPanel?.viewModel.pendingUpdateVersion = version
+            self?.trayManager?.setPendingUpdate(version)
+        }
 
         // Watch ~/.config/ainto/ for external file changes (e.g. manual TOML edits)
         watchConfigDirectory()
