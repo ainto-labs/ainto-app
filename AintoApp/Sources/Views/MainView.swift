@@ -5,6 +5,18 @@ import AintoCore
 /// Main search view — glassmorphism style matching modern macOS.
 struct MainView: View {
     @ObservedObject var viewModel: SearchViewModel
+    /// Top row of the visible window of results.
+    @State private var firstVisibleResult = 0
+
+    /// Scrolls by whole rows, and only once the selection leaves the visible
+    /// window, so a row is never left half under the header or the footer.
+    private func scrollToKeepVisible(_ index: Int, proxy: ScrollViewProxy) {
+        guard index < viewModel.results.count,
+              let first = Theme.firstVisibleRow(keeping: index, from: firstVisibleResult)
+        else { return }
+        firstVisibleResult = first
+        proxy.scrollTo(viewModel.results[first].id, anchor: .top)
+    }
 
     var body: some View {
         Group {
@@ -21,32 +33,7 @@ struct MainView: View {
                 ClaudeView(viewModel: viewModel)
             }
         }
-        .background {
-            ZStack {
-                VisualEffectBackground(material: .hudWindow, blendingMode: .behindWindow)
-                LinearGradient(
-                    colors: [Color.white.opacity(0.06), Color.clear],
-                    startPoint: .top, endPoint: .bottom
-                )
-            }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.3),
-                            Color.white.opacity(0.1),
-                            Color.white.opacity(0.05),
-                        ],
-                        startPoint: .top, endPoint: .bottom
-                    ),
-                    lineWidth: 0.5
-                )
-        }
-        .shadow(color: .black.opacity(0.3), radius: 40, x: 0, y: 20)
-        .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+        .panelChrome()
     }
 
     private var mainSearchView: some View {
@@ -75,17 +62,11 @@ struct MainView: View {
 
                 // Mode indicator — hidden when AI is disabled
                 if viewModel.aiEnabled {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 6) {
                         Text(viewModel.searchMode == .claude ? "Search" : "AI mode")
                             .font(.system(size: 11))
-                            .foregroundStyle(.tertiary)
-                        Text("Tab")
-                            .font(.system(size: 10, weight: .medium, design: .rounded))
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .background(Color.primary.opacity(0.1))
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(.secondary)
+                        Keycap(key: "Tab")
                     }
                 }
             }
@@ -97,12 +78,11 @@ struct MainView: View {
 
             // Results list (hidden in Claude mode)
             if !viewModel.results.isEmpty && viewModel.searchMode == .apps {
-                Divider()
-                    .opacity(0.5)
+                Hairline()
 
                 ScrollViewReader { proxy in
-                    ScrollView {
-                        VStack(spacing: 2) {
+                    ScrollView(showsIndicators: false) {
+                        VStack(spacing: Theme.rowSpacing) {
                             ForEach(Array(viewModel.results.enumerated()), id: \.element.id) { index, result in
                                 ResultRow(
                                     result: result,
@@ -127,25 +107,27 @@ struct MainView: View {
                                 }
                             }
                         }
-                        .padding(.vertical, 4)
                     }
-                    .frame(maxHeight: 400)
+                    // Margins rather than padding, so scrolling to a row keeps
+                    // the gap above it instead of tucking it under the header.
+                    .contentMargins(.vertical, Theme.rowInset, for: .scrollContent)
+                    .clipToListMargins()
+                    .frame(maxHeight: Theme.resultListMaxHeight)
                     .onChange(of: viewModel.selectedIndex) { _, newIndex in
-                        if newIndex < viewModel.results.count {
-                            proxy.scrollTo(viewModel.results[newIndex].id)
-                        }
+                        scrollToKeepVisible(newIndex, proxy: proxy)
+                    }
+                    .onChange(of: viewModel.results.first?.id) { _, _ in
+                        firstVisibleResult = 0
                     }
                 }
             }
 
             // Footer
-            Divider()
-                .opacity(0.3)
             HStack {
                 if !viewModel.query.isEmpty && viewModel.searchMode == .apps {
                     Text(viewModel.statusText)
                         .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                 } else if let version = viewModel.pendingUpdateVersion {
                     Button {
                         viewModel.onShowUpdate?()
@@ -173,6 +155,7 @@ struct MainView: View {
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 8)
+            .barBackground()
         }
         .frame(width: 680)
         .fixedSize(horizontal: false, vertical: true)
@@ -205,26 +188,25 @@ struct ResultRow: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(result.title)
-                    .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
-                    .foregroundColor(isSelected ? .white : .primary)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
                 Text(result.subtitle)
                     .font(.system(size: 11))
-                    .foregroundColor(isSelected ? .white.opacity(0.75) : .secondary)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
 
             Spacer()
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .frame(height: Theme.resultRowHeight)
         .background {
             if isSelected {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.accentColor.opacity(0.85))
+                SelectionBackground()
             }
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, Theme.rowInset)
         .contentShape(Rectangle())
     }
 }
@@ -235,18 +217,14 @@ struct KeyHint: View {
     let label: String
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 3) {
             ForEach(keys, id: \.self) { key in
-                Text(key)
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(Color.primary.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                Keycap(key: key)
             }
             Text(label)
-                .font(.system(size: 10))
-                .foregroundStyle(.tertiary)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .padding(.leading, 3)
         }
     }
 }

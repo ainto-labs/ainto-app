@@ -5,6 +5,8 @@ import AintoCore
 /// Snippet management sub-page — list + preview/edit.
 struct SnippetView: View {
     @ObservedObject var viewModel: SearchViewModel
+    /// Top row of the visible window of the list.
+    @State private var firstVisibleSnippet = 0
     @FocusState private var isFilterFocused: Bool
 
     var body: some View {
@@ -31,7 +33,7 @@ struct SnippetView: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
 
-                Divider().opacity(0.5)
+                Hairline()
 
                 SnippetEditForm(viewModel: viewModel)
             } else {
@@ -62,7 +64,7 @@ struct SnippetView: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
 
-                Divider().opacity(0.5)
+                Hairline()
 
                 if viewModel.filteredSnippets.isEmpty {
                 VStack(spacing: 8) {
@@ -82,8 +84,8 @@ struct SnippetView: View {
                 HStack(spacing: 0) {
                     // Left: snippet list
                     ScrollViewReader { proxy in
-                        ScrollView {
-                            VStack(spacing: 2) {
+                        ScrollView(showsIndicators: false) {
+                            VStack(spacing: Theme.rowSpacing) {
                                 ForEach(Array(viewModel.filteredSnippets.enumerated()), id: \.element.id) { index, snippet in
                                     SnippetItemRow(
                                         snippet: snippet,
@@ -99,18 +101,22 @@ struct SnippetView: View {
                                     }
                                 }
                             }
-                            .padding(.vertical, 4)
                         }
+                        .contentMargins(.vertical, Theme.rowInset, for: .scrollContent)
+                        .clipToListMargins()
                         .onChange(of: viewModel.snippetSelectedIndex) { _, newIndex in
                             let items = viewModel.filteredSnippets
-                            if newIndex < items.count {
-                                proxy.scrollTo(items[newIndex].id)
-                            }
+                            guard newIndex < items.count,
+                                  let first = Theme.firstVisibleRow(keeping: newIndex, from: firstVisibleSnippet)
+                            else { return }
+                            firstVisibleSnippet = first
+                            proxy.scrollTo(items[first].id, anchor: .top)
+                        }
+                        .onChange(of: viewModel.filteredSnippets.first?.id) { _, _ in
+                            firstVisibleSnippet = 0
                         }
                     }
                     .frame(width: 280)
-
-                    Divider().opacity(0.3)
 
                     // Right: preview
                     SnippetPreview(
@@ -119,18 +125,18 @@ struct SnippetView: View {
                         onDelete: { id in viewModel.deleteSnippet(id: id) }
                     )
                     .frame(maxWidth: .infinity)
+                    .paneBackground()
                 }
-                .frame(height: 360)
+                .frame(height: Theme.splitListHeight)
                 }
             }
 
             // Footer
-            Divider().opacity(0.3)
             HStack {
                 if !viewModel.isEditingSnippet {
                     Text("\(viewModel.filteredSnippets.count) snippets")
                         .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                 }
                 Spacer()
                 HStack(spacing: 12) {
@@ -147,6 +153,7 @@ struct SnippetView: View {
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 8)
+            .barBackground()
         }
         .frame(width: 680)
     }
@@ -172,30 +179,29 @@ struct SnippetItemRow: View {
         HStack(spacing: 10) {
             Image(systemName: "text.quote")
                 .frame(width: 24, height: 24)
-                .foregroundStyle(isSelected ? .white : .secondary)
+                .foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(snippet.name.isEmpty ? "Untitled" : snippet.name)
-                    .font(.system(size: 13))
-                    .foregroundColor(isSelected ? .white : .primary)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
                 Text(snippet.keyword)
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(isSelected ? .white.opacity(0.7) : .gray)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
 
             Spacer()
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 10)
+        .frame(height: Theme.listRowHeight)
         .background {
             if isSelected {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.accentColor.opacity(0.85))
+                SelectionBackground()
             }
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, Theme.rowInset)
         .contentShape(Rectangle())
     }
 }
@@ -226,7 +232,7 @@ struct SnippetPreview: View {
                     expandedText = Self.expand(snippet.expansion)
                 }
 
-                Divider().opacity(0.3)
+                Hairline(inset: 12)
 
                 // Info
                 VStack(alignment: .leading, spacing: 6) {
@@ -240,7 +246,7 @@ struct SnippetPreview: View {
                 }
                 .padding(12)
 
-                Divider().opacity(0.3)
+                Hairline(inset: 12)
 
                 // Actions
                 HStack {
@@ -302,7 +308,7 @@ struct SnippetEditForm: View {
                             .padding(.horizontal, 10)
                             .padding(.vertical, 8)
                             .background(Color.primary.opacity(0.06))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
                     }
                     .onAppear {
                         // Focus the name field after render
@@ -318,7 +324,7 @@ struct SnippetEditForm: View {
                                 .padding(8)
                                 .frame(minHeight: 120)
                                 .background(Color.primary.opacity(0.06))
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
 
                             Text("Include **Dynamic Placeholders** for context like the copied text or the current date: `{date}` `{time}` `{clipboard}` `{uuid}`")
                                 .font(.system(size: 11))
@@ -334,7 +340,7 @@ struct SnippetEditForm: View {
                             .padding(.horizontal, 10)
                             .padding(.vertical, 8)
                             .background(Color.primary.opacity(0.06))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
                     }
                 }
                 .padding(24)

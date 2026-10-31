@@ -38,7 +38,7 @@ struct ClaudeView: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
 
-            Divider().opacity(0.5)
+            Hairline()
 
             // Conversation
             if viewModel.claudeMessages.isEmpty {
@@ -73,7 +73,7 @@ struct ClaudeView: View {
                 }
             }
 
-            Divider().opacity(0.5)
+            Hairline()
 
             // Input bar
             HStack(spacing: 12) {
@@ -97,13 +97,12 @@ struct ClaudeView: View {
             .padding(.vertical, 10)
 
             // Footer
-            Divider().opacity(0.3)
             HStack {
                 HStack(spacing: 6) {
                     ClaudeIcon(size: 14)
                     Text("Claude Code")
                         .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                 }
                 Spacer()
                 HStack(spacing: 12) {
@@ -117,6 +116,7 @@ struct ClaudeView: View {
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 8)
+            .barBackground()
         }
         .frame(width: 680)
         .frame(minHeight: 500)
@@ -137,7 +137,7 @@ struct MessageBubble: View {
                     .font(.system(size: 13))
                     .padding(10)
                     .background(Color.accentColor.opacity(0.2))
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
                     .textSelection(.enabled)
             } else {
                 // Assistant message — left aligned with icon
@@ -171,7 +171,7 @@ struct MessageBubble: View {
                     }
                 }
                 .background(Color.primary.opacity(0.05))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
 
                 Spacer(minLength: 60)
             }

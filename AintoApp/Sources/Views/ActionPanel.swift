@@ -21,7 +21,7 @@ struct ActionPanelView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
 
-            Divider().opacity(0.3)
+            Hairline(inset: Theme.popoverRowInset)
 
             // Action list
             VStack(spacing: 2) {
@@ -39,7 +39,6 @@ struct ActionPanelView: View {
             .padding(.vertical, 4)
 
             // Footer
-            Divider().opacity(0.3)
             HStack {
                 Spacer()
                 HStack(spacing: 12) {
@@ -50,15 +49,10 @@ struct ActionPanelView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 6)
+            .barBackground(inset: Theme.popoverRowInset, radius: Theme.popoverRowRadius)
         }
         .frame(width: 260)
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5)
-        }
-        .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
+        .panelChrome()
     }
 
 }
@@ -73,29 +67,28 @@ struct ActionRow: View {
             Image(systemName: action.icon)
                 .font(.system(size: 12))
                 .frame(width: 16)
-                .foregroundStyle(isSelected ? .white : .secondary)
+                .foregroundStyle(.secondary)
 
             Text(action.title)
                 .font(.system(size: 13))
-                .foregroundColor(isSelected ? .white : .primary)
+                .foregroundStyle(.primary)
 
             Spacer()
 
             if let shortcut = action.shortcut {
                 Text(shortcut)
                     .font(.system(size: 10, design: .monospaced))
-                    .foregroundColor(isSelected ? .white.opacity(0.7) : .gray)
+                    .foregroundStyle(.secondary)
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background {
             if isSelected {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.accentColor.opacity(0.85))
+                SelectionBackground(radius: Theme.popoverRowRadius)
             }
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, Theme.popoverRowInset)
         .contentShape(Rectangle())
     }
 }

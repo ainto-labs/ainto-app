@@ -14,6 +14,7 @@ final class SearchPanel: NSPanel {
 
     /// Floating action panel window.
     private var actionWindow: NSWindow?
+    private var actionHosting: NSHostingView<ActionPanelView>?
     private var actionSelectedIndex = 0
 
     init() {
@@ -41,13 +42,8 @@ final class SearchPanel: NSPanel {
         self.backgroundColor = .clear
         self.hasShadow = true
 
-        // Round the window content view to match the SwiftUI clipShape,
-        // so the window-level shadow follows the rounded corners.
         if let cv = self.contentView {
-            cv.wantsLayer = true
-            cv.layer?.cornerRadius = 16
-            cv.layer?.cornerCurve = .continuous
-            cv.layer?.masksToBounds = true
+            Theme.shapePanelWindow(cv, radius: Theme.panelRadius)
         }
 
         // Accept keyboard input even without activating the app
@@ -200,7 +196,7 @@ final class SearchPanel: NSPanel {
             selectedIndex: actionSelectedIndex
         )
         let hosting = NSHostingView(rootView: panelView)
-        hosting.frame = NSRect(x: 0, y: 0, width: 260, height: CGFloat(actions.count * 32 + 70))
+        hosting.frame = NSRect(origin: .zero, size: hosting.fittingSize)
 
         let window = NSPanel(
             contentRect: hosting.frame,
@@ -209,6 +205,7 @@ final class SearchPanel: NSPanel {
             defer: false
         )
         window.contentView = hosting
+        Theme.shapePanelWindow(hosting, radius: Theme.popoverRadius)
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = true
@@ -222,18 +219,20 @@ final class SearchPanel: NSPanel {
 
         window.orderFront(nil)
         actionWindow = window
+        actionHosting = hosting
         viewModel.showActionPanel = true
     }
 
     func hideActionPanel() {
         actionWindow?.orderOut(nil)
         actionWindow = nil
+        actionHosting = nil
         viewModel.showActionPanel = false
         actionSelectedIndex = 0
     }
 
     func updateActionPanelSelection() {
-        guard let window = actionWindow else { return }
+        guard let hosting = actionHosting else { return }
         let actions = viewModel.currentActions
         let title = viewModel.results.indices.contains(viewModel.selectedIndex)
             ? viewModel.results[viewModel.selectedIndex].title : ""
@@ -244,9 +243,9 @@ final class SearchPanel: NSPanel {
             onDismiss: { [weak self] in self?.hideActionPanel() },
             selectedIndex: actionSelectedIndex
         )
-        let hosting = NSHostingView(rootView: panelView)
-        hosting.frame = window.contentView?.frame ?? .zero
-        window.contentView = hosting
+        // Swap the root view rather than the hosting view, which carries the
+        // window's rounded mask and edge.
+        hosting.rootView = panelView
     }
 
     var isPanelVisible: Bool {
