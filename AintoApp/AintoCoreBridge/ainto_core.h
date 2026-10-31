@@ -70,23 +70,14 @@ int64_t rc_clipboard_insert_file(const char* path, const char* source_app);
 /// Get the clipboard image directory path
 const char* rc_clipboard_image_dir(void);
 
-/// Get recent clipboard entries as JSON array string
-const char* rc_clipboard_get_recent(uint64_t limit);
-
 /// Get recent clipboard entries with pagination
 const char* rc_clipboard_get_recent_paged(uint64_t limit, uint64_t offset);
-
-/// Search clipboard entries by text, returns JSON array string
-const char* rc_clipboard_search(const char* query);
 
 /// Search clipboard entries with pagination
 const char* rc_clipboard_search_paged(const char* query, uint64_t limit, uint64_t offset);
 
 /// Delete a clipboard entry by ID
 int32_t rc_clipboard_delete(int64_t id);
-
-/// Clear all entries
-int32_t rc_clipboard_clear(void);
 
 // ============================================================
 // Snippets
@@ -127,9 +118,6 @@ const char* rc_claude_get_session_id(void* session);
 
 /// Read next chunk from Claude stream, returns text or NULL when done
 const char* rc_claude_next_chunk(void* session);
-
-/// Get accumulated response text
-const char* rc_claude_get_response(void* session);
 
 /// Get stderr output for error diagnosis
 const char* rc_claude_get_stderr(void* session);

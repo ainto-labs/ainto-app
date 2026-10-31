@@ -143,11 +143,6 @@ impl ClipboardStore {
         Ok(id)
     }
 
-    /// Get recent clipboard entries.
-    pub fn get_recent(&self, limit: usize) -> Result<Vec<ClipboardEntry>, Error> {
-        self.get_recent_paged(limit, 0)
-    }
-
     pub fn get_recent_paged(
         &self,
         limit: usize,
@@ -199,10 +194,6 @@ impl ClipboardStore {
     }
 
     /// Search clipboard entries by text content.
-    pub fn search(&self, query: &str) -> Result<Vec<ClipboardEntry>, Error> {
-        self.search_paged(query, 50, 0)
-    }
-
     pub fn search_paged(
         &self,
         query: &str,
@@ -260,22 +251,6 @@ impl ClipboardStore {
 
         self.db
             .execute("DELETE FROM clipboard_items WHERE id = ?1", params![id])?;
-        Ok(())
-    }
-
-    /// Clear all entries.
-    pub fn clear(&mut self) -> Result<(), Error> {
-        let mut stmt = self
-            .db
-            .prepare("SELECT image_path FROM clipboard_items WHERE image_path IS NOT NULL")?;
-        let paths: Vec<String> = stmt
-            .query_map([], |row| row.get(0))?
-            .filter_map(|r| r.ok())
-            .collect();
-        for filename in paths {
-            self.safe_remove_image(&filename);
-        }
-        self.db.execute("DELETE FROM clipboard_items", [])?;
         Ok(())
     }
 
@@ -354,14 +329,4 @@ pub fn hash_content(content: &ClipboardContent) -> u64 {
         ClipboardContent::Image { png_bytes, .. } => xxh3_64(png_bytes),
         ClipboardContent::File { path } => xxh3_64(path.as_bytes()),
     }
-}
-
-/// Encode raw RGBA pixels to PNG bytes.
-pub fn rgba_to_png(rgba: &[u8], width: u32, height: u32) -> Result<Vec<u8>, Error> {
-    use image::{ImageBuffer, Rgba};
-    let img: ImageBuffer<Rgba<u8>, _> =
-        ImageBuffer::from_raw(width, height, rgba.to_vec()).ok_or(Error::ImageEncode)?;
-    let mut buf = Vec::new();
-    img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)?;
-    Ok(buf)
 }

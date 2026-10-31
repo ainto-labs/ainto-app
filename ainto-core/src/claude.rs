@@ -12,7 +12,6 @@ use crate::Error;
 pub struct ClaudeSession {
     child: Child,
     reader: BufReader<std::process::ChildStdout>,
-    pub response: String,
     pub is_streaming: bool,
     pub session_id: Option<String>,
 }
@@ -87,7 +86,6 @@ impl ClaudeSession {
         Ok(Self {
             child,
             reader: BufReader::new(stdout),
-            response: String::new(),
             is_streaming: true,
             session_id: None,
         })
@@ -115,7 +113,6 @@ impl ClaudeSession {
                         self.session_id = Some(sid);
                     }
                     if let Some(text) = extract_text_from_stream_json(&line) {
-                        self.response.push_str(&text);
                         return Some(text);
                     }
                     // Non-text event, read next line

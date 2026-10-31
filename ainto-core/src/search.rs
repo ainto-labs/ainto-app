@@ -9,7 +9,6 @@ pub struct AppEntry {
     pub bundle_id: Option<String>, // CFBundleIdentifier, for dedup
     pub icon_png: Option<Vec<u8>>, // PNG bytes for icon
     pub ranking: i32,
-    pub is_favourite: bool,
 }
 
 /// In-memory index of all discovered applications.
@@ -59,22 +58,10 @@ impl AppIndex {
         ranked
     }
 
-    /// Get all favourite apps.
-    pub fn get_favourites(&self) -> Vec<&AppEntry> {
-        self.apps.iter().filter(|a| a.is_favourite).collect()
-    }
-
     /// Increment the ranking for an app by path.
     pub fn update_ranking(&mut self, path: &str) {
         if let Some(app) = self.apps.iter_mut().find(|a| a.path == path) {
             app.ranking = app.ranking.saturating_add(1);
-        }
-    }
-
-    /// Set favourite status for an app by path.
-    pub fn toggle_favourite(&mut self, path: &str) {
-        if let Some(app) = self.apps.iter_mut().find(|a| a.path == path) {
-            app.is_favourite = !app.is_favourite;
         }
     }
 
@@ -89,15 +76,6 @@ impl AppIndex {
                 .map(crate::ranking::RankingEntry::frecency_score)
                 .unwrap_or(0);
         }
-    }
-
-    /// Get app paths that have been ranked (for in-memory lookup).
-    pub fn get_ranked_paths(&self) -> Vec<(&str, i32)> {
-        self.apps
-            .iter()
-            .filter(|a| a.ranking != 0)
-            .map(|a| (a.path.as_str(), a.ranking))
-            .collect()
     }
 }
 
