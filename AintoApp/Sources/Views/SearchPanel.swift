@@ -41,6 +41,10 @@ final class SearchPanel: NSPanel {
         self.isOpaque = false
         self.backgroundColor = .clear
         self.hasShadow = true
+        // The system open animation draws the shadow rim for the unmasked
+        // rectangle, leaving a straight line across the rounded top corners
+        // for about half a second.
+        self.animationBehavior = .none
 
         if let cv = self.contentView {
             Theme.shapePanelWindow(cv, radius: Theme.panelRadius)
@@ -209,6 +213,7 @@ final class SearchPanel: NSPanel {
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = true
+        window.animationBehavior = .none
         window.level = .floating
 
         // Position to the right of the main panel
